@@ -7,6 +7,9 @@ import (
 )
 
 type (
+	// LKKCli is the receiver of command tool utilities
+	LKKCli struct {
+	}
 	// LkkFile is the receiver of file utilities
 	LkkFile struct {
 	}
@@ -57,6 +60,9 @@ type (
 
 	// CallBack 回调执行函数,无参数且无返回值
 	CallBack func()
+
+	// Color 颜色枚举
+	CliColor int8
 )
 
 const (
@@ -64,6 +70,37 @@ const (
 	Version = "0.1.6"
 
 	Unknown = "Unknown"
+
+	//CLI_GREEN 命令行颜色绿色
+	CLI_GREEN CliColor=1
+	//CLI_LIGHT_GREEN 命令行颜色浅绿色
+	CLI_LIGHT_GREEN CliColor=2
+	//CLI_CYAN 命令行颜色青色
+	CLI_CYAN CliColor=3
+	//CLI_LIGHT_CYAN 命令行颜色淡青色
+	CLI_LIGHT_CYAN CliColor=4
+	//CLI_RED 命令行颜色红色
+	CLI_RED CliColor=5
+	//CLI_LIGHT_RED 命令行颜色淡红色
+	CLI_LIGHT_RED CliColor=6
+	//CLI_BLUE 命令行颜色蓝色
+	CLI_BLUE CliColor=7
+	//CLI_LIGHT_BLUE 命令行颜色淡蓝色
+	CLI_LIGHT_BLUE CliColor=8
+	//CLI_PURPLE 命令行颜色紫色
+	CLI_PURPLE CliColor=9
+	//CLI_LIGHT_PURPLE 命令行颜色淡紫色
+	CLI_LIGHT_PURPLE CliColor=10
+	//CLI_GRAY 命令行颜色灰色
+	CLI_GRAY CliColor=11
+	//CLI_LIGHT_GRAY 命令行颜色浅灰色
+	CLI_LIGHT_GRAY CliColor=12
+	//CLI_YELLOW 命令行颜色黄色
+	CLI_YELLOW CliColor=13
+	//CLI_BLACK 命令行颜色黑色
+	CLI_BLACK CliColor=14
+	//CLI_WHITE 命令行颜色白色
+	CLI_WHITE CliColor=15
 
 	//UINT_MAX 无符号整型uint最大值
 	UINT_MAX = ^uint(0)
@@ -275,6 +312,9 @@ const (
 var (
 	// Kuptime 当前服务启动时间
 	Kuptime = time.Now()
+
+	//KCli utilities
+	KCli LKKCli
 
 	// KFile utilities
 	KFile LkkFile
