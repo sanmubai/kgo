@@ -85,7 +85,11 @@ func (kc *LKKCli) FormatStrWithColor(str string,args ...interface{}) string{
         if i<=lc-1{
             color=cArr[i]
         }
-        args[i]=kc.ColorWrapStr(str,color)
+        s,ok:=args[i].(string)
+        if !ok{
+            continue
+        }
+        args[i]=kc.ColorWrapStr(s,color)
     }
     return fmt.Sprintf(str,args[0:len(args)-1])
 }
