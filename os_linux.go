@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package kgo
@@ -6,7 +7,6 @@ import (
 	"bufio"
 	"fmt"
 	"golang.org/x/sys/unix"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,10 +18,6 @@ import (
 
 // getPidByInode 根据套接字的inode获取PID.须root权限.
 func getPidByInode(inode string, procDirs []string) (pid int) {
-	if len(procDirs) == 0 {
-		procDirs, _ = filepath.Glob("/proc/[0-9]*/fd/[0-9]*")
-	}
-
 	re := regexp.MustCompile(inode)
 	for _, item := range procDirs {
 		path, _ := os.Readlink(item)
@@ -51,7 +47,7 @@ func getProcessPathByPid(pid int) (res string) {
 func (ko *LkkOS) MemoryUsage(virtual bool) (used, free, total uint64) {
 	if virtual {
 		// 虚拟机的内存
-		contents, err := ioutil.ReadFile("/proc/meminfo")
+		contents, err := os.ReadFile("/proc/meminfo")
 		if err == nil {
 			lines := strings.Split(string(contents), "\n")
 			for _, line := range lines {
@@ -89,7 +85,7 @@ func (ko *LkkOS) MemoryUsage(virtual bool) (used, free, total uint64) {
 // idle为空闲时间,
 // total为累计时间.
 func (ko *LkkOS) CpuUsage() (user, idle, total uint64) {
-	contents, _ := ioutil.ReadFile("/proc/stat")
+	contents, _ := os.ReadFile("/proc/stat")
 	if len(contents) > 0 {
 		lines := strings.Split(string(contents), "\n")
 		for _, line := range lines {
@@ -133,12 +129,14 @@ func (ko *LkkOS) DiskUsage(path string) (used, free, total uint64) {
 }
 
 // Uptime 获取系统运行时间,秒.
-func (ko *LkkOS) Uptime() (uint64, error) {
-	sysinfo := &unix.Sysinfo_t{}
-	if err := unix.Sysinfo(sysinfo); err != nil {
-		return 0, err
+func (ko *LkkOS) Uptime() (res uint64, err error) {
+	info := &unix.Sysinfo_t{}
+	err = unix.Sysinfo(info)
+	if err == nil {
+		res = uint64(info.Uptime)
 	}
-	return uint64(sysinfo.Uptime), nil
+
+	return
 }
 
 // GetBiosInfo 获取BIOS信息.

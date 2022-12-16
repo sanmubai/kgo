@@ -3,6 +3,7 @@
 package kgo
 
 import (
+	"bytes"
 	"github.com/brianvoe/gofakeit/v6"
 	"time"
 )
@@ -15,12 +16,12 @@ type itfType interface {
 
 //类型-人员
 type sPerson struct {
-	secret string `json:"secret"`
+	secret string ``
 	Name   string `fake:"{name}" json:"name"`
 	Addr   string `fake:"{city}" json:"city"`
 	Age    int    `fake:"{number:1,99}" json:"age"`
 	Gender bool   `fake:"{bool}" json:"gender"`
-	other  int    `json:"other"`
+	other  int    ``
 	none   bool
 }
 
@@ -35,6 +36,24 @@ type sOrganization struct {
 	Members    sPersons //成员
 }
 
+type userAccount struct {
+	ID       uint32 `json:"id"`
+	Status   bool   `json:"status"`
+	Type     uint8  `json:"type"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
+	Password string `json:"-"`
+	Avatar   string `json:"avatar"`
+}
+
+type userAccountJson struct {
+	ID       uint32 `json:"id"`
+	Type     uint8  `json:"type"`
+	Nickname string `json:"nickname"`
+	Avatar   string `json:"avatar"`
+	sPerson
+}
+
 //接口对象
 var itfObj itfType
 
@@ -46,6 +65,9 @@ var crowd sPersons
 
 //结构体-组织
 var orgS1 = new(sOrganization) //返回指针
+
+//结构体-用户账号
+var account1 userAccount
 
 //字典-普通人员
 var personMp1 = map[string]interface{}{"age": 20, "name": "test1", "naction": "us", "tel": "13712345678"}
@@ -121,6 +143,8 @@ var strKor = "안녕하세요"
 var strSha1 = "82c9c0b34622756f6ef9731fbd8fbcef168a907f"
 var strSha256 = "dcad188403ba3a4931288076f8398283abed9a90d1955364b3b5beeb551f0062"
 var strSha512 = "057e65f970c85399b3953059b059c58c5b4eeeb572c741adb13af2fe2696f1ca3edc3757005aa801ea2bedc29529ba0c638e945fd95341d4dfbb6b693c3f6dfb"
+var uuidNamespaceDNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+var uuidNamespaceURL = "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
 var tesStr1 = "'test-bla-bla-4>2-y-3<6'"
 var tesStr2 = "one%20%26%20two"
 var tesStr3 = "'foo @+%/'你好"
@@ -175,6 +199,10 @@ var tesStr38 = "The quick brown fox jumped over the lazy dog"
 var tesStr39 = "中国"
 var tesStr40 = "中华人民共和国"
 var tesStr41 = "中华"
+var tesStr42 = "000000"
+var tesStr43 = "3.0.504"
+var tesStr44 = "-3.14159"
+var tesStr45 = "+3.14159"
 
 //中文名
 var tesChineseName1 = "李四"
@@ -202,6 +230,7 @@ var strJson3 = "call)hello world(done"
 var strJson4 = `JsonpCallbackFn_abc123etc({"meta":{"Status":200,"Content-Type":"application/json","Content-Length":"19","etc":"etc"},"data":{"name":"yummy"}})`
 var strJson5 = `{"id":"1"}`
 var strJson6 = `[{"key1":"value1"},{"key2":"value2"}]`
+var strJson7 = `{"message_code":["bb9041bcfd55be4be20243b8e051963b","e5d94d692a4af45397a04c403d89bc3a"],"send_to":"tester","create_time":1641201974,"expire_time":4102415999}`
 
 //email
 var tesEmail1 = "test@example.com"
@@ -392,8 +421,8 @@ var myDate2, _ = time.ParseInLocation("2006-01-02 15:04:05", strTime5, time.Loca
 var myDate3, _ = time.ParseInLocation("2006-01-02 15:04:05", strTime6, time.Local)
 
 //当前时间
-var nowNanoInt = Kuptime.UnixNano()
-var nowNanoStr = toStr(Kuptime.UnixNano())
+var nowNanoInt = kuptime.UnixNano()
+var nowNanoStr = toStr(kuptime.UnixNano())
 
 //IP
 var noneIp = "0.0.0.0"
@@ -496,6 +525,8 @@ var bytsPasswd = []byte("$2a$10$j3WOP6rP2I7skNoxiFdNdOh6OhPxP0Sp3Wmeuekh90oeF3D1
 var bytCryptKey = []byte("1234567890123456")
 var bytsUtf8Hello = []byte(utf8Hello)
 var bytsGbkHello = []byte{0xC4, 0xE3, 0xBA, 0xC3, 0xA3, 0xAC, 0xCA, 0xC0, 0xBD, 0xE7, 0xA3, 0xA1}
+var bytsUuidNamespaceDNS = bytes.Replace([]byte(uuidNamespaceDNS), bytMinus, bytEmpty, -1)
+var bytsUuidNamespaceUrl = bytes.Replace([]byte(uuidNamespaceURL), bytMinus, bytEmpty, -1)
 
 //单字符切片
 var ssSingle = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}
@@ -604,7 +635,10 @@ xVZ+SCC8Wd6nIK4FyZbYaa3Jz7GkqHdMelsl
 
 //文件
 var rootDir = "/root"
+var rootDir2 = "/root/hello/directory"
 var rootFile1 = "/root/hello/world"
+var rootFile2 = "/root/hello/ok.zip"
+var rootFile3 = "/root/tar/test2.tar.gz"
 var admDir = `C:\Users\Administrator`
 var admTesDir = admDir + `\Test`
 var dirCurr = "./"
@@ -622,15 +656,20 @@ var fileGo = "./file.go"
 var fileGmod = "go.mod"
 var fileSongs = "./testdata/诗经.txt"
 var fileDante = "./testdata/dante.txt"
-var filePubPem = "./testdata/rsa/public_key.pem"
-var filePriPem = "./testdata/rsa/private_key.pem"
+var filePubPem = "./testdata/rsa/public_key1024.pem"
+var filePriPem = "./testdata/rsa/private_key1024.pem"
+var filePubPem2048 = "./testdata/rsa/public_key2048.pem"
+var filePriPem2048 = "./testdata/rsa/private_key2048.pem"
 var fileGitkee = "./testdata/.gitkeep"
+var fileNone = "./testdata/none"
 var fileLink = "./testdata/lnk"
 var copyLink = "./testdata/lnk_copy"
-var fileNone = "./testdata/none"
+var copyLink2 = "./vendor/lnk_copy"
 var imgPng = "./testdata/diglett.png"
 var imgJpg = "./testdata/gopher10th-small.jpg"
 var imgSvg = "./testdata/jetbrains.svg"
+var imgNone = "./testdata/none-image.jpeg"
+var gitkeep = "./testdata/.gitkeep"
 var putfile = "./testdata/putfile"
 var apndfile = "./testdata/appendfile"
 var touchfile = "./testdata/touchfile"
@@ -722,6 +761,10 @@ var tesUrl36 = "mailto:someone@example.com"
 var tesUrl37 = "rtmp://foobar.com"
 var tesUrl38 = "xyz://foobar.com"
 var tesUrl39 = "https://www.baidu.com/"
+var tesUrl40 = "https://www.w3.org/"
+
+//下载文件
+var downloadfile01 = "./testdata/download/test001/file001"
 
 //命令
 var tesCommand01 = " ls -a -h"
@@ -807,11 +850,12 @@ var tesEmoji1 = `Lorem ipsum 🥊dolor 🤒sit amet, consectetur adipiscing 🍂
 var tesEmoji2 = `Hi!😀👽😀☂❤华み원❤This is a string 😄 🐷 with some 👍🏻 🙈 emoji! 🐷 🏃🏿‍♂️`
 
 func init() {
-	gofakeit.Struct(&personS1)
-	gofakeit.Struct(&personS2)
-	gofakeit.Struct(&personS3)
-	gofakeit.Struct(&personS4)
-	gofakeit.Struct(&personS5)
+	_ = gofakeit.Struct(&personS1)
+	_ = gofakeit.Struct(&personS2)
+	_ = gofakeit.Struct(&personS3)
+	_ = gofakeit.Struct(&personS4)
+	_ = gofakeit.Struct(&personS5)
+	_ = gofakeit.Struct(&account1)
 
 	crowd = append(crowd, personS1, personS2, personS3, personS4, personS5)
 

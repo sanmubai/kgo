@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	crand "crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/gob"
@@ -15,14 +16,15 @@ import (
 	"fmt"
 	"github.com/json-iterator/go"
 	xhtml "golang.org/x/net/html"
+	"golang.org/x/text/cases"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/language"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/width"
 	"hash/crc32"
 	"html"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"net"
@@ -36,7 +38,7 @@ import (
 	"unicode/utf8"
 )
 
-// Md5 获取字节切片md5值.
+// Md5Byte 获取字节切片md5值.
 // length指定结果长度,默认32.
 func (ks *LkkString) Md5Byte(str []byte, length ...uint8) []byte {
 	var l uint8 = 32
@@ -211,7 +213,7 @@ func (ks *LkkString) IsGbk(s []byte) (res bool) {
 
 // Img2Base64 将图片字节转换为base64字符串.ext为图片扩展名,默认jpg.
 func (ks *LkkString) Img2Base64(content []byte, ext ...string) string {
-	var imgType string = "jpg"
+	var imgType = "jpg"
 	if len(ext) > 0 {
 		imgType = strings.ToLower(ext[0])
 	}
@@ -338,15 +340,20 @@ func (ks *LkkString) HasLetter(str string) bool {
 
 // IsASCII 是否ASCII字符串.
 func (ks *LkkString) IsASCII(str string) bool {
-	//return str != "" && RegAscii.MatchString(str)
 	n := len(str)
-	for i := 0; i < n; i++ {
-		if str[i] > 127 {
-			return false
+	if n == 0 {
+		return false
+	} else if n > 256 {
+		return RegAscii.MatchString(str)
+	} else {
+		for i := 0; i < n; i++ {
+			if str[i] > 127 {
+				return false
+			}
 		}
 	}
 
-	return str != ""
+	return true
 }
 
 // IsMultibyte 字符串是否含有多字节字符.
@@ -553,7 +560,7 @@ func (ks *LkkString) IsCreditNo(str string) (bool, string) {
 	}
 
 	// 检查省份代码
-	if _, chk = CreditArea[str[0:2]]; !chk {
+	if _, chk = creditArea[str[0:2]]; !chk {
 		return false, ""
 	}
 
@@ -593,8 +600,8 @@ func (ks *LkkString) IsCreditNo(str string) (bool, string) {
 	return true, str
 }
 
-// IsHexcolor 检查是否十六进制颜色,并返回带"#"的修正值.
-func (ks *LkkString) IsHexcolor(str string) (bool, string) {
+// IsHexColor 检查是否十六进制颜色,并返回带"#"的修正值.
+func (ks *LkkString) IsHexColor(str string) (bool, string) {
 	chk := str != "" && RegHexcolor.MatchString(str)
 	if chk && !strings.ContainsRune(str, '#') {
 		str = "#" + strings.ToUpper(str)
@@ -602,8 +609,8 @@ func (ks *LkkString) IsHexcolor(str string) (bool, string) {
 	return chk, str
 }
 
-// IsRGBcolor 检查字符串是否RGB颜色格式.
-func (ks *LkkString) IsRGBcolor(str string) bool {
+// IsRgbColor 检查字符串是否RGB颜色格式.
+func (ks *LkkString) IsRgbColor(str string) bool {
 	return str != "" && RegRgbcolor.MatchString(str)
 }
 
@@ -650,8 +657,8 @@ func (ks *LkkString) IsBase64Image(str string) bool {
 
 // IsRsaPublicKey 检查字符串是否RSA的公钥,keylen为密钥长度.
 func (ks *LkkString) IsRsaPublicKey(str string, keylen uint16) bool {
-	bb := bytes.NewBufferString(str)
-	pemBytes, _ := ioutil.ReadAll(bb)
+	bf := bytes.NewBufferString(str)
+	pemBytes, _ := io.ReadAll(bf)
 
 	// 获取公钥
 	block, _ := pem.Decode(pemBytes)
@@ -684,19 +691,7 @@ func (ks *LkkString) IsRsaPublicKey(str string, keylen uint16) bool {
 
 // IsUrl 检查字符串是否URL.
 func (ks *LkkString) IsUrl(str string) bool {
-	if str == "" || len(str) <= 3 || utf8.RuneCountInString(str) >= 2083 || strings.HasPrefix(str, ".") {
-		return false
-	}
-
-	res, err := url.ParseRequestURI(str)
-	if err != nil {
-		return false //Couldn't even parse the url
-	}
-	if len(res.Scheme) == 0 {
-		return false //No Scheme found
-	}
-
-	return true
+	return isUrl(str)
 }
 
 // IsUrlExists 检查URL是否存在.
@@ -705,7 +700,7 @@ func (ks *LkkString) IsUrlExists(str string) bool {
 		return false
 	}
 
-	client := &http.Client{}
+	client := http.DefaultClient
 	resp, err := client.Head(str)
 	if err != nil {
 		return false
@@ -723,12 +718,12 @@ func (ks *LkkString) Jsonp2Json(str string) (string, error) {
 	end := strings.LastIndex(str, ")")
 
 	if start == -1 || end == -1 {
-		return "", errors.New("[Jsonp2Json] invalid jsonp.")
+		return "", errors.New("[Jsonp2Json] invalid jsonp")
 	}
 
 	start += 1
 	if start >= end {
-		return "", errors.New("[Jsonp2Json] invalid jsonp.")
+		return "", errors.New("[Jsonp2Json] invalid jsonp")
 	}
 
 	res := str[start:end]
@@ -915,7 +910,7 @@ loopDom:
 		case nx == xhtml.StartTagToken:
 			previousStartToken = domDoc.Token()
 		case nx == xhtml.TextToken:
-			if chk, _ := ks.Dstrpos(previousStartToken.Data, TextHtmlExcludeTags, false); chk {
+			if chk, _ := ks.Dstrpos(previousStartToken.Data, textHtmlExcludeTags, false); chk {
 				continue
 			}
 
@@ -1106,7 +1101,7 @@ func (ks *LkkString) GetDomain(str string, isMain ...bool) string {
 // ClearUrlPrefix 清除URL的前缀;
 // str为URL字符串,prefix为前缀,默认"/".
 func (ks *LkkString) ClearUrlPrefix(str string, prefix ...string) string {
-	var p string = "/"
+	var p = "/"
 	if len(prefix) > 0 {
 		p = prefix[0]
 	}
@@ -1162,7 +1157,7 @@ func (ks *LkkString) Random(length uint8, rtype LkkRandString) string {
 	case RAND_STRING_SPECIAL:
 		letter = []rune(alphas + numbers + specials)
 	case RAND_STRING_CHINESE:
-		letter = CommonChinese
+		letter = commonChinese
 	default:
 		letter = []rune(alphas)
 	}
@@ -1201,7 +1196,8 @@ func (ks *LkkString) Lcfirst(str string) string {
 
 // Ucwords 将字符串中每个词的首字母转换为大写.
 func (ks *LkkString) Ucwords(str string) string {
-	return strings.Title(str)
+	caser := cases.Title(language.English)
+	return caser.String(str)
 }
 
 // Lcwords 将字符串中每个词的首字母转换为小写.
@@ -1333,6 +1329,11 @@ func (ks *LkkString) Reverse(str string) string {
 		runes[n] = r
 	}
 	return string(runes[n:])
+}
+
+// ChunkBytes 将字节切片分割为多个小块.其中size为每块的长度.
+func (ks *LkkString) ChunkBytes(bs []byte, size int) [][]byte {
+	return chunkBytes(bs, size)
 }
 
 // ChunkSplit 将字符串分割成小块.str为要分割的字符,chunklen为分割的尺寸,end为行尾序列符号.
@@ -1507,17 +1508,58 @@ func (ks *LkkString) Uniqid(prefix string) string {
 		buf[4:12])
 }
 
-// UuidV4 获取36位UUID(Version4).
+// UuidV4 获取36位UUID(Version4,RFC4122).
 func (ks *LkkString) UuidV4() (string, error) {
-	buf := make([]byte, 16)
-	_, err := crand.Read(buf)
+	u := make([]byte, 16)
+	_, err := crand.Read(u)
+
+	//sets the version bits
+	u[6] = (u[6] & 0x0f) | (3 << 4)
+	//sets the variant bits
+	u[8] = u[8]&(0xff>>2) | (0x02 << 6)
 
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%12x",
-		buf[0:4],
-		buf[4:6],
-		buf[6:8],
-		buf[8:10],
-		buf[10:16]), err
+		u[0:4],
+		u[4:6],
+		u[6:8],
+		u[8:10],
+		u[10:16]), err
+}
+
+// UuidV5 根据提供的字符,使用sha1生成36位哈希值(Version5,RFC4122);
+// name为要计算散列值的字符,可以为nil;
+// namespace为命名空间,长度必须为16.
+func (ks *LkkString) UuidV5(name, namespace []byte) (string, error) {
+	var nsSize = len(namespace)
+	if nsSize != 16 {
+		return "", fmt.Errorf("[UuidV5]`s namespace must be exactly 16 bytes long, got %d bytes", nsSize)
+	}
+
+	var h = sha1.New()
+	h.Write(namespace)
+	h.Write(name)
+
+	u := make([]byte, 16)
+	copy(u[:], h.Sum(nil))
+
+	//sets the version bits
+	u[6] = (u[6] & 0x0f) | (5 << 4)
+	//sets the variant bits
+	u[8] = u[8]&(0xff>>2) | (0x02 << 6)
+
+	buf := make([]byte, 36)
+
+	hex.Encode(buf[0:8], u[0:4])
+	buf[8] = '-'
+	hex.Encode(buf[9:13], u[4:6])
+	buf[13] = '-'
+	hex.Encode(buf[14:18], u[6:8])
+	buf[18] = '-'
+	hex.Encode(buf[19:23], u[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:], u[10:])
+
+	return string(buf), nil
 }
 
 // VersionCompare 对比两个版本号字符串.
@@ -1750,7 +1792,7 @@ func (ks *LkkString) ToSnakeCase(str string) string {
 	return camelCaseToLowerCase(str, '_')
 }
 
-// ToSnakeCase 转为串形写法.
+// ToKebabCase 转为串形写法.
 // 使用横杠"-"连接.
 func (ks *LkkString) ToKebabCase(str string) string {
 	return camelCaseToLowerCase(str, '-')
@@ -1862,14 +1904,14 @@ func (ks *LkkString) ClosestWord(word string, searchs []string) (string, int) {
 // Utf8ToBig5 UTF-8转BIG5编码.
 func (ks *LkkString) Utf8ToBig5(s []byte) ([]byte, error) {
 	reader := transform.NewReader(bytes.NewReader(s), traditionalchinese.Big5.NewEncoder())
-	d, e := ioutil.ReadAll(reader)
+	d, e := io.ReadAll(reader)
 	return d, e
 }
 
 // Big5ToUtf8 BIG5转UTF-8编码.
 func (ks *LkkString) Big5ToUtf8(s []byte) ([]byte, error) {
 	reader := transform.NewReader(bytes.NewReader(s), traditionalchinese.Big5.NewDecoder())
-	d, e := ioutil.ReadAll(reader)
+	d, e := io.ReadAll(reader)
 	return d, e
 }
 
@@ -2020,7 +2062,7 @@ func (ks *LkkString) CountBase64Byte(str string) (res int) {
 	pos := strings.Index(str, ",")
 	if pos > 10 {
 		img := strings.Replace(str[pos:], "=", "", -1)
-		res = int(float64(len(img)) * float64(3.0/4.0))
+		res = int(float64(len(img)) * (3.0 / 4.0))
 	}
 
 	return
@@ -2146,7 +2188,7 @@ func (ks *LkkString) Gravatar(email string, size uint16) string {
 func (ks *LkkString) AtWho(text string, minLen ...int) []string {
 	var result = []string{}
 	var username string
-	var min int = 5
+	var min = 5
 	if len(minLen) > 0 && minLen[0] > 0 {
 		min = minLen[0]
 	}
@@ -2193,7 +2235,7 @@ func (ks *LkkString) AtWho(text string, minLen ...int) []string {
 
 // MatchEquations 匹配字符串中所有的等式.
 func (ks *LkkString) MatchEquations(str string) (res []string) {
-	res = RegEquation.FindAllString(equationStr03, -1)
+	res = RegEquation.FindAllString(str, -1)
 	return
 }
 
@@ -2207,4 +2249,99 @@ func (ks *LkkString) GetEquationValue(str, name string) (res string) {
 	}
 
 	return
+}
+
+// ToRunes 将字符串转为字符切片.
+func (ks *LkkString) ToRunes(str string) []rune {
+	return str2Runes(str)
+}
+
+// PasswordSafeLevel 检查密码安全等级;为0 极弱,为1 弱,为2 一般,为3 很好,为4 极佳.
+func (ks *LkkString) PasswordSafeLevel(str string) (res uint8) {
+	length := len(str)
+	if length > 0 {
+		var scoreTotal, scoreAlphaNumber, scoreSpecial int
+
+		//根据长度加分
+		if length >= 6 {
+			scoreTotal += length
+		} else {
+			scoreTotal += 1
+		}
+
+		var repeatMap = make(map[rune]int)
+
+		//根据类型加分
+		for _, char := range str {
+			if _, ok := repeatMap[char]; ok {
+				repeatMap[char] += 1
+			} else {
+				repeatMap[char] = 1
+			}
+
+			if !unicode.IsNumber(char) && !unicode.IsLower(char) && !unicode.IsUpper(char) { //其他(特殊)字符
+				if scoreSpecial == 0 {
+					scoreSpecial = 6
+				} else {
+					scoreSpecial += 2
+				}
+			} else {
+				if scoreAlphaNumber == 0 {
+					scoreAlphaNumber = 3
+				} else {
+					scoreTotal += 1
+				}
+			}
+		}
+		scoreTotal += scoreAlphaNumber + scoreSpecial
+
+		//重复性检查
+		for _, num := range repeatMap {
+			if num > 1 {
+				scoreTotal -= num * 2
+			}
+		}
+
+		if scoreTotal <= 0 { //极弱
+			res = 0
+		} else if scoreTotal <= 20 { //弱
+			res = 1
+		} else if scoreTotal <= 30 { //一般
+			res = 2
+		} else if scoreTotal <= 40 { //很好
+			res = 3
+		} else { //极佳
+			res = 4
+		}
+
+		//是否弱密码
+		for _, v := range weakPasswords {
+			if v == str || ks.Index(str, v, true) == 0 {
+				res = 1
+				break
+			}
+		}
+	}
+
+	return
+}
+
+// StrOffset 字符串整体偏移.
+func (ks *LkkString) StrOffset(str string, num int) string {
+	var buffer bytes.Buffer
+	var all = len(str)
+	if all > 0 {
+		//取余
+		rem := num % 256
+		if rem < 0 {
+			rem += 256
+		}
+
+		for i := 0; i < all; i++ {
+			c := (int(str[i]) + rem) % 256
+			buffer.WriteByte(byte(c))
+		}
+	}
+
+	return buffer.String()
 }

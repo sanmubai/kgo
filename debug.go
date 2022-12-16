@@ -1,9 +1,12 @@
 package kgo
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -11,34 +14,74 @@ import (
 )
 
 // DumpPrint 打印调试变量.
-func (ks *LkkDebug) DumpPrint(vs ...interface{}) {
-	dumpPrint(vs)
+func (kd *LkkDebug) DumpPrint(vs ...interface{}) {
+	dumpPrint(vs...)
 }
 
 // DumpStacks 打印堆栈信息.
 func (kd *LkkDebug) DumpStacks() {
 	buf := make([]byte, 16384)
 	buf = buf[:runtime.Stack(buf, true)]
-	fmt.Printf("=== BEGIN goroutine stack dump ===\n%s\n=== END goroutine stack dump ===\n\n", buf)
+	fmt.Printf("=== BEGIN stack dump ===\n%s\n=== END stack dump ===\n\n", buf)
+}
+
+// Stacks 获取堆栈信息;skip为要跳过的帧数.
+func (kd *LkkDebug) Stacks(skip int) []byte {
+	buf := new(bytes.Buffer)
+	var lastFile string
+
+	//获取第N行的内容
+	var sourceLine = func(lines [][]byte, n int) []byte {
+		n-- // in stack trace, lines are 1-indexed but our array is 0-indexed
+		var res []byte = bytDunno
+		if n >= 0 && n < len(lines) {
+			res = bytes.TrimSpace(lines[n])
+		}
+
+		return res
+	}
+
+	for i := skip; ; i++ {
+		pc, file, line, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
+
+		_, _ = fmt.Fprintf(buf, "%s:%d (0x%x)\n", file, line, pc)
+		var lines [][]byte
+		if file != lastFile {
+			data, err := os.ReadFile(file)
+			if err == nil {
+				lines = bytes.Split(data, bytLinefeed)
+				lastFile = file
+			}
+		}
+		_, _ = fmt.Fprintf(buf, "\t%s: %s\n", kd.GetCallName(pc, true), sourceLine(lines, line))
+	}
+	buf.Write(bytLinefeed)
+
+	return buf.Bytes()
 }
 
 // GetCallName 获取调用的方法名称;f为目标方法;onlyFun为true时仅返回方法,不包括包名.
 func (kd *LkkDebug) GetCallName(f interface{}, onlyFun bool) string {
-	var funcObj *runtime.Func
-	r := reflectPtr(reflect.ValueOf(f))
+	var fn *runtime.Func
+	r, _ := reflectFinalValue(reflect.ValueOf(f))
 	switch r.Kind() {
 	case reflect.Invalid:
 		// Skip this function, and fetch the PC and file for its parent
 		pc, _, _, _ := runtime.Caller(1)
 		// Retrieve a Function object this functions parent
-		funcObj = runtime.FuncForPC(pc)
+		fn = runtime.FuncForPC(pc)
 	case reflect.Func:
-		funcObj = runtime.FuncForPC(r.Pointer())
+		fn = runtime.FuncForPC(r.Pointer())
+	case reflect.Uintptr:
+		fn = runtime.FuncForPC(f.(uintptr))
 	default:
 		return ""
 	}
 
-	name := funcObj.Name()
+	name := fn.Name()
 	if onlyFun {
 		// extract just the function name (and not the module path)
 		return strings.TrimPrefix(filepath.Ext(name), ".")
@@ -96,7 +139,7 @@ func (kd *LkkDebug) GetMethod(t interface{}, method string) interface{} {
 	return getMethod(t, method)
 }
 
-// CallMethod 调用对象的方法.
+// CallMethod 调用对象t的method方法.
 // 若执行成功,则结果是该方法的返回结果;
 // 否则返回(nil, error).
 func (kd *LkkDebug) CallMethod(t interface{}, method string, args ...interface{}) ([]interface{}, error) {
@@ -111,4 +154,27 @@ func (kd *LkkDebug) CallMethod(t interface{}, method string, args ...interface{}
 // GetFuncNames 获取变量的所有(公开的)函数名.
 func (kd *LkkDebug) GetFuncNames(obj interface{}) (res []string) {
 	return getFuncNames(obj)
+}
+
+// WrapError 错误包裹.
+func (kd *LkkDebug) WrapError(err error, args ...interface{}) (res error) {
+	num := len(args)
+	if err == nil && num == 0 {
+		res = errors.New("[WrapError] parameter error")
+	} else if err != nil && num == 0 {
+		res = err
+	} else {
+		var msg []string
+		for _, v := range args {
+			msg = append(msg, toStr(v))
+		}
+
+		if err != nil {
+			msg = append(msg, fmt.Sprintf("last error: %s", err.Error()))
+		}
+
+		res = errors.New(strings.Join(msg, "\r\n"))
+	}
+
+	return
 }

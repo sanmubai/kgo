@@ -41,15 +41,15 @@ func (ke *LkkEncrypt) Base64Encode(str []byte) []byte {
 func (ke *LkkEncrypt) Base64Decode(str []byte) ([]byte, error) {
 	l := len(str)
 	if l > 0 {
-		dbuf := make([]byte, base64.StdEncoding.DecodedLen(l))
-		n, err := base64.StdEncoding.Decode(dbuf, str)
-		return dbuf[:n], err
+		buf := make([]byte, base64.StdEncoding.DecodedLen(l))
+		n, err := base64.StdEncoding.Decode(buf, str)
+		return buf[:n], err
 	}
 
 	return nil, nil
 }
 
-// Base64UrlSafeEncode url安全的Base64Encode,没有'/'和'+'及结尾的'=' .
+// Base64UrlEncode url安全的Base64Encode,没有'/'和'+'及结尾的'=' .
 func (ke *LkkEncrypt) Base64UrlEncode(str []byte) []byte {
 	l := len(str)
 	if l > 0 {
@@ -59,7 +59,7 @@ func (ke *LkkEncrypt) Base64UrlEncode(str []byte) []byte {
 		// Base64 Url Safe is the same as Base64 but does not contain '/' and '+' (replaced by '_' and '-') and trailing '=' are removed.
 		buf = bytes.Replace(buf, bytSlash, bytUnderscore, -1)
 		buf = bytes.Replace(buf, bytPlus, bytMinus, -1)
-		buf = bytes.Replace(buf, bytEqual, bytEmp, -1)
+		buf = bytes.Replace(buf, bytEqual, bytEmpty, -1)
 
 		return buf
 	}
@@ -71,18 +71,21 @@ func (ke *LkkEncrypt) Base64UrlEncode(str []byte) []byte {
 func (ke *LkkEncrypt) Base64UrlDecode(str []byte) ([]byte, error) {
 	l := len(str)
 	if l > 0 {
-		var missing = (4 - len(str)%4) % 4
+		var missing = (4 - l%4) % 4
 		str = append(str, bytes.Repeat(bytEqual, missing)...)
 
-		dbuf := make([]byte, base64.URLEncoding.DecodedLen(len(str)))
-		n, err := base64.URLEncoding.Decode(dbuf, str)
-		return dbuf[:n], err
+		buf := make([]byte, base64.URLEncoding.DecodedLen(len(str)))
+		n, err := base64.URLEncoding.Decode(buf, str)
+		return buf[:n], err
 	}
 
 	return nil, nil
 }
 
-// AuthCode 授权码编码或解码;encode为true时编码,为false解码;expiry为有效期,秒;返回结果为加密/解密的字符串和有效期时间戳.
+// AuthCode 授权码编码或解码;
+// encode为true时编码,为false解码;
+// expiry为加密时的有效期,单位秒,为0时代表永久(100年);
+// 返回结果为加密/解密的字符串和有效期时间戳.
 func (ke *LkkEncrypt) AuthCode(str, key []byte, encode bool, expiry int64) ([]byte, int64) {
 	// DYNAMIC_KEY_LEN 动态密钥长度，相同的明文会生成不同密文就是依靠动态密钥
 	// 加入随机密钥，可以令密文无任何规律，即便是原文和密钥完全相同，加密结果也会每次不同，增大破解难度。
@@ -103,11 +106,12 @@ func (ke *LkkEncrypt) AuthCode(str, key []byte, encode bool, expiry int64) ([]by
 	keya := keyByte[:16]
 
 	// 密钥b会用来做数据完整性验证
-	keyb := keyByte[16:]
+	keyb := make([]byte, 16)
+	copy(keyb, keyByte[16:])
 
 	// 密钥c用于变化生成的密文
 	var keyc []byte
-	if encode == false {
+	if !encode {
 		keyc = str[:DYNAMIC_KEY_LEN]
 	} else {
 		now, _ := time.Now().MarshalBinary()
@@ -122,19 +126,19 @@ func (ke *LkkEncrypt) AuthCode(str, key []byte, encode bool, expiry int64) ([]by
 	cryptkeyLen := len(cryptkey)
 	// 明文，前10位用来保存时间戳，解密时验证数据有效性，10到26位用来保存keyb(密钥b)，解密时会通过这个密钥验证数据完整性
 	// 如果是解码的话，会从第 DYNAMIC_KEY_LEN 位开始，因为密文前 DYNAMIC_KEY_LEN 位保存 动态密钥，以保证解密正确
-	if encode == false { //解密
+	if !encode { //解密
 		var err error
 		str, err = ke.Base64UrlDecode(str[DYNAMIC_KEY_LEN:])
 		if err != nil {
 			return nil, 0
 		}
 	} else {
-		if expiry != 0 {
-			expiry = expiry + time.Now().Unix()
+		if expiry == 0 {
+			expiry = 3153600000 //100年
 		}
+		expiry = expiry + time.Now().Unix()
 		expMd5 := md5Byte(append(str, keyb...), 16)
 		str = []byte(fmt.Sprintf("%010d%s%s", expiry, expMd5, str))
-		//str = append([]byte(fmt.Sprintf("%010d", expiry)), append(expMd5, str...)...)
 	}
 
 	strLen = len(str)
@@ -158,23 +162,25 @@ func (ke *LkkEncrypt) AuthCode(str, key []byte, encode bool, expiry int64) ([]by
 	h = 0
 	j = 0
 	for i = 0; i < strLen; i++ {
-		h = ((h + 1) % 256)
-		j = ((j + box[h]) % 256)
+		h = (h + 1) % 256
+		j = (j + box[h]) % 256
 		box[h], box[j] = box[j], box[h]
 		// 从密钥簿得出密钥进行异或，再转成字符
 		resdata = append(resdata, byte(int(str[i])^box[(box[h]+box[j])%256]))
 	}
-	if encode == false { //解密
+	if !encode { //解密
 		// substr($result, 0, 10) == 0 验证数据有效性
 		// substr($result, 0, 10) - time() > 0 验证数据有效性
 		// substr($result, 10, 16) == substr(md5(substr($result, 26).$keyb), 0, 16) 验证数据完整性
 		// 验证数据有效性，请看未加密明文的格式
 		if len(resdata) <= 26 {
 			return nil, 0
+		} else if string(resdata[10:26]) != string(md5Byte(append(resdata[26:], keyb...), 16)) {
+			return nil, 0
 		}
 
 		expTime, _ := strconv.ParseInt(string(resdata[:10]), 10, 0)
-		if (expTime == 0 || expTime-time.Now().Unix() > 0) && string(resdata[10:26]) == string(md5Byte(append(resdata[26:], keyb...), 16)) {
+		if (expTime - time.Now().Unix()) > 0 {
 			return resdata[26:], expTime
 		} else {
 			return nil, expTime
@@ -294,11 +300,12 @@ func (ke *LkkEncrypt) HmacShaX(data, secret []byte, x uint16) []byte {
 	}
 
 	// Write Data to it
-	h.Write(data)
-
+	_, err := h.Write(data)
 	src := h.Sum(nil)
 	dst := make([]byte, hex.EncodedLen(len(src)))
-	hex.Encode(dst, src)
+	if err == nil {
+		hex.Encode(dst, src)
+	}
 
 	return dst
 }
@@ -384,7 +391,7 @@ func (ke *LkkEncrypt) aesDecrypt(cipherText, key []byte, mode string, paddingTyp
 
 	clen = len(originData)
 	if pt != PKCS_NONE && clen > 0 && int(originData[clen-1]) > clen {
-		return nil, errors.New(fmt.Sprintf("[aesDecrypt] [%s] decrypt failed", mode))
+		return nil, fmt.Errorf("[aesDecrypt] [%s] decrypt failed", mode)
 	}
 
 	var plainText []byte
@@ -448,7 +455,7 @@ func (ke *LkkEncrypt) AesOFBDecrypt(cipherText, key []byte) ([]byte, error) {
 	return ke.aesDecrypt(cipherText, key, "OFB", PKCS_NONE)
 }
 
-// GenerateRsaKeys 生成RSA密钥对.bits为密钥位数,通常为1024或2048.
+// GenerateRsaKeys 生成RSA密钥对.bits为密钥位数,必须是64的倍数,范围为512-65536,通常为1024或2048.
 func (ke *LkkEncrypt) GenerateRsaKeys(bits int) (private []byte, public []byte, err error) {
 	// 生成私钥文件
 	var privateKey *rsa.PrivateKey
@@ -508,7 +515,7 @@ func (ke *LkkEncrypt) RsaPrivateDecrypt(cipherText, privateKey []byte) ([]byte, 
 	// 获取私钥
 	block, _ := pem.Decode(privateKey)
 	if block == nil {
-		return nil, errors.New("[RsaPrivateDecrypt]`private key error!")
+		return nil, errors.New("[RsaPrivateDecrypt]`private key error")
 	}
 
 	// 解析PKCS1格式的私钥
@@ -527,7 +534,7 @@ func (ke *LkkEncrypt) RsaPrivateEncrypt(clearText, privateKey []byte) ([]byte, e
 	// 获取私钥
 	block, _ := pem.Decode(privateKey)
 	if block == nil {
-		return nil, errors.New("[RsaPrivateEncrypt]`private key error!")
+		return nil, errors.New("[RsaPrivateEncrypt]`private key error")
 	}
 
 	// 解析PKCS1格式的私钥
@@ -573,4 +580,137 @@ func (ke *LkkEncrypt) RsaPublicDecrypt(cipherText, publicKey []byte) ([]byte, er
 	}
 
 	return out[skip:], nil
+}
+
+// RsaPublicEncryptLong RSA公钥加密长文本.
+func (ke *LkkEncrypt) RsaPublicEncryptLong(clearText, publicKey []byte) ([]byte, error) {
+	// 解密pem格式的公钥
+	block, _ := pem.Decode(publicKey)
+	if block == nil {
+		return nil, errors.New("[RsaPublicEncryptLong]`public key error")
+	}
+
+	// 解析公钥
+	pubInterface, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	var res, item []byte
+	pubKey := pubInterface.(*rsa.PublicKey)
+	bits := chunkBytes(clearText, pubKey.Size()-56)
+	all := len(bits)
+	for i, bs := range bits {
+		item, err = rsa.EncryptPKCS1v15(rand.Reader, pubKey, bs)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, item...)
+		if i < (all - 1) {
+			res = append(res, bytDelimiter...)
+		}
+	}
+
+	return res, nil
+}
+
+// RsaPrivateDecryptLong RSA私钥解密长文本.比加密耗时.
+// cipherText为密文,privateKey为私钥.
+func (ke *LkkEncrypt) RsaPrivateDecryptLong(cipherText, privateKey []byte) ([]byte, error) {
+	// 获取私钥
+	block, _ := pem.Decode(privateKey)
+	if block == nil {
+		return nil, errors.New("[RsaPrivateDecryptLong]`private key error")
+	}
+
+	// 解析PKCS1格式的私钥
+	pri, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	var res, item []byte
+	bits := bytes.Split(cipherText, bytDelimiter)
+	for _, bs := range bits {
+		//bs = bytes.Replace(bs, bytDelimiter, bytEmpty, -1)
+		item, err = rsa.DecryptPKCS1v15(rand.Reader, pri, bs)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, item...)
+	}
+	return res, nil
+}
+
+// RsaPrivateEncryptLong RSA私钥加密长文本.比解密耗时.
+// clearText为明文,privateKey为私钥.
+func (ke *LkkEncrypt) RsaPrivateEncryptLong(clearText, privateKey []byte) ([]byte, error) {
+	// 获取私钥
+	block, _ := pem.Decode(privateKey)
+	if block == nil {
+		return nil, errors.New("[RsaPrivateEncryptLong]`private key error")
+	}
+
+	// 解析PKCS1格式的私钥
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	var res, item []byte
+	bits := chunkBytes(clearText, priv.Size()-56)
+	all := len(bits)
+	for i, bs := range bits {
+		item, err = rsa.SignPKCS1v15(nil, priv, crypto.Hash(0), bs)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, item...)
+		if i < (all - 1) {
+			res = append(res, bytDelimiter...)
+		}
+	}
+
+	return res, nil
+}
+
+// RsaPublicDecryptLong RSA公钥解密长文本.
+// cipherText为密文,publicKey为公钥.
+func (ke *LkkEncrypt) RsaPublicDecryptLong(cipherText, publicKey []byte) ([]byte, error) {
+	// 解密pem格式的公钥
+	block, _ := pem.Decode(publicKey)
+	if block == nil {
+		return nil, errors.New("[RsaPublicDecryptLong]`public key error")
+	}
+
+	// 解析公钥
+	pubInterface, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// 类型断言
+	pubKey := pubInterface.(*rsa.PublicKey)
+
+	var res []byte
+	bits := bytes.Split(cipherText, bytDelimiter)
+	for _, bs := range bits {
+		c := new(big.Int)
+		m := new(big.Int)
+		m.SetBytes(bs)
+		e := big.NewInt(int64(pubKey.E))
+		c.Exp(m, e, pubKey.N)
+		out := c.Bytes()
+		olen := len(out)
+		skip := 0
+		for i := 2; i < olen; i++ {
+			if (i+1 < olen) && out[i] == 0xff && out[i+1] == 0 {
+				skip = i + 2
+				break
+			}
+		}
+		res = append(res, out[skip:]...)
+	}
+
+	return res, nil
 }

@@ -2,14 +2,14 @@ package kgo
 
 import (
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
+	"os"
 	"testing"
 )
 
 func TestEncrypt_Base64Encode(t *testing.T) {
 	var res []byte
 
-	res = KEncr.Base64Encode(bytEmp)
+	res = KEncr.Base64Encode(bytEmpty)
 	assert.Nil(t, res)
 
 	res = KEncr.Base64Encode(bytsHello)
@@ -27,7 +27,7 @@ func TestEncrypt_Base64Decode(t *testing.T) {
 	var res []byte
 	var err error
 
-	res, err = KEncr.Base64Decode(bytEmp)
+	res, err = KEncr.Base64Decode(bytEmpty)
 	assert.Nil(t, res)
 	assert.Nil(t, err)
 
@@ -50,7 +50,7 @@ func BenchmarkEncrypt_Base64Decode(b *testing.B) {
 func TestEncrypt_Base64UrlEncode(t *testing.T) {
 	var res []byte
 
-	res = KEncr.Base64UrlEncode(bytEmp)
+	res = KEncr.Base64UrlEncode(bytEmpty)
 	assert.Nil(t, res)
 
 	res = KEncr.Base64UrlEncode([]byte(str2Code))
@@ -69,7 +69,7 @@ func TestEncrypt_Base64UrlDecode(t *testing.T) {
 	var res []byte
 	var err error
 
-	res, err = KEncr.Base64UrlDecode(bytEmp)
+	res, err = KEncr.Base64UrlDecode(bytEmpty)
 	assert.Nil(t, res)
 	assert.Nil(t, err)
 
@@ -106,18 +106,22 @@ func TestEncrypt_AuthCode(t *testing.T) {
 	assert.Greater(t, exp, int64(0))
 
 	//空串
-	res, exp = KEncr.AuthCode(bytEmp, bytSpeedLight, true, 0)
+	res, exp = KEncr.AuthCode(bytEmpty, bytSpeedLight, true, 0)
 	assert.Empty(t, res)
 
 	//空密钥
-	res, exp = KEncr.AuthCode(bytsHello, bytEmp, true, 0)
+	res, exp = KEncr.AuthCode(bytsHello, bytEmpty, true, 0)
 	assert.NotEmpty(t, res)
+
+	//解密校验
+	res2, exp = KEncr.AuthCode([]byte(strSha512), bytSpeedLight, false, 0)
+	assert.Empty(t, res2)
 
 	//不合法
 	KEncr.AuthCode([]byte("7caeNfPt/N1zHdj5k/7i7pol6NHsVs0Cji7c15h4by1RYcrBoo7EEw=="), bytSpeedLight, false, 0)
 	KEncr.AuthCode([]byte("7caeNfPt/N1zHdj5k/7i7pol6N"), bytSpeedLight, false, 0)
-	KEncr.AuthCode([]byte("123456"), bytEmp, false, 0)
-	KEncr.AuthCode([]byte("1234#iu3498r"), bytEmp, false, 0)
+	KEncr.AuthCode([]byte("123456"), bytEmpty, false, 0)
+	KEncr.AuthCode([]byte("1234#iu3498r"), bytEmpty, false, 0)
 }
 
 func BenchmarkEncrypt_AuthCode_Encode(b *testing.B) {
@@ -140,7 +144,7 @@ func TestEncrypt_PasswordHash(t *testing.T) {
 	var err error
 
 	//空密码
-	res, err = KEncr.PasswordHash(bytEmp)
+	res, err = KEncr.PasswordHash(bytEmpty)
 	assert.NotNil(t, res)
 	assert.Nil(t, err)
 
@@ -177,20 +181,30 @@ func BenchmarkEncrypt_PasswordVerify(b *testing.B) {
 }
 
 func TestEncrypt_EasyEncryptDecrypt(t *testing.T) {
-	var enc, dec []byte
+	var ori, enc, dec []byte
 
 	enc = KEncr.EasyEncrypt(bytsHello, bytSpeedLight)
 	assert.NotEmpty(t, enc)
-
 	dec = KEncr.EasyDecrypt(enc, bytSpeedLight)
 	assert.Equal(t, bytsHello, dec)
 
+	//长内容
+	ori = []byte(personsArrJson)
+	enc = KEncr.EasyEncrypt(ori, bytSpeedLight)
+	assert.NotEmpty(t, enc)
+	dec = KEncr.EasyDecrypt(enc, bytSpeedLight)
+	assert.Equal(t, ori, dec)
+
+	//短待解密
+	dec = KEncr.EasyDecrypt(bytSlash, bytSpeedLight)
+	assert.Empty(t, dec)
+
 	//空字符串
-	enc = KEncr.EasyEncrypt(bytEmp, bytSpeedLight)
+	enc = KEncr.EasyEncrypt(bytEmpty, bytSpeedLight)
 	assert.Empty(t, enc)
 
 	//空密钥
-	enc = KEncr.EasyEncrypt(bytsHello, bytEmp)
+	enc = KEncr.EasyEncrypt(bytsHello, bytEmpty)
 	assert.NotEmpty(t, enc)
 
 	//密钥错误
@@ -264,6 +278,14 @@ func TestEncrypt_AesCBCEncryptDecrypt(t *testing.T) {
 	_, err = KEncr.AesCBCEncrypt(bytsHello, bytSpeedLight)
 	assert.NotNil(t, err)
 
+	//密钥长度不符合
+	_, err = KEncr.AesCBCDecrypt(enc, bytSlash)
+	assert.NotNil(t, err)
+
+	//密文太短
+	_, err = KEncr.AesCBCDecrypt(bytUnderscore, bytCryptKey)
+	assert.NotNil(t, err)
+
 	//错误的密钥
 	des2, err = KEncr.AesCBCDecrypt(enc, []byte("1234561234567890"))
 	assert.NotEqual(t, bytsHello, des2)
@@ -281,7 +303,7 @@ func TestEncrypt_AesCBCEncryptDecrypt(t *testing.T) {
 	assert.Equal(t, bytsHello, des)
 
 	//空字符串
-	enc, err = KEncr.AesCBCEncrypt(bytEmp, bytCryptKey)
+	enc, err = KEncr.AesCBCEncrypt(bytEmpty, bytCryptKey)
 	des, err = KEncr.AesCBCDecrypt(enc, bytCryptKey)
 	assert.NotEmpty(t, enc)
 	assert.Empty(t, des)
@@ -344,7 +366,7 @@ func TestEncrypt_AesCFBEncryptDecrypt(t *testing.T) {
 	assert.NotEqual(t, bytsHello, des2)
 
 	//空字符串
-	enc, err = KEncr.AesCFBEncrypt(bytEmp, bytCryptKey)
+	enc, err = KEncr.AesCFBEncrypt(bytEmpty, bytCryptKey)
 	des, err = KEncr.AesCFBDecrypt(enc, bytCryptKey)
 	assert.NotEmpty(t, enc)
 	assert.Empty(t, des)
@@ -392,7 +414,7 @@ func TestEncrypt_AesCTREncryptDecrypt(t *testing.T) {
 	assert.NotEqual(t, bytsHello, des2)
 
 	//空字符串
-	enc, err = KEncr.AesCTREncrypt(bytEmp, bytCryptKey)
+	enc, err = KEncr.AesCTREncrypt(bytEmpty, bytCryptKey)
 	des, err = KEncr.AesCTRDecrypt(enc, bytCryptKey)
 	assert.NotEmpty(t, enc)
 	assert.Empty(t, des)
@@ -440,7 +462,7 @@ func TestEncrypt_AesOFBEncryptDecrypt(t *testing.T) {
 	assert.NotEqual(t, bytsHello, des2)
 
 	//空字符串
-	enc, err = KEncr.AesOFBEncrypt(bytEmp, bytCryptKey)
+	enc, err = KEncr.AesOFBEncrypt(bytEmpty, bytCryptKey)
 	des, err = KEncr.AesOFBDecrypt(enc, bytCryptKey)
 	assert.NotEmpty(t, enc)
 	assert.Empty(t, des)
@@ -496,25 +518,47 @@ func TestEncrypt_RsaPublicEncryptPrivateDecrypt(t *testing.T) {
 	var enc, des []byte
 	var err error
 
-	pubFileBs, _ := ioutil.ReadFile(filePubPem)
-	priFileBs, _ := ioutil.ReadFile(filePriPem)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
 
-	//公钥加密
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
+
+	//公钥加密-1024
 	enc, err = KEncr.RsaPublicEncrypt(bytsHello, pubFileBs)
 	assert.NotEmpty(t, enc)
 	assert.Nil(t, err)
 
-	//私钥解密
+	//私钥解密-1024
 	des, err = KEncr.RsaPrivateDecrypt(enc, priFileBs)
 	assert.NotEmpty(t, des)
 	assert.Nil(t, err)
 	assert.Equal(t, bytsHello, des)
+
+	//公钥加密-1024内容过长
+	enc, err = KEncr.RsaPublicEncrypt([]byte(strJson7), pubFileBs)
+	assert.Empty(t, enc)
+	assert.NotNil(t, err)
+
+	//公钥加密-2048
+	enc, err = KEncr.RsaPublicEncrypt([]byte(strJson7), pubFileBs2048)
+	assert.NotEmpty(t, enc)
+	assert.Nil(t, err)
+
+	//私钥解密-2048
+	des, err = KEncr.RsaPrivateDecrypt(enc, priFileBs2048)
+	assert.NotEmpty(t, des)
+	assert.Nil(t, err)
+	assert.Equal(t, strJson7, string(des))
 
 	//错误的公钥
 	_, err = KEncr.RsaPublicEncrypt(bytsHello, bytSpeedLight)
 	assert.NotNil(t, err)
 
 	_, err = KEncr.RsaPublicEncrypt(bytsHello, []byte(rsaPublicErrStr))
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPublicEncrypt(bytsHello, priFileBs)
 	assert.NotNil(t, err)
 
 	//错误的私钥
@@ -527,7 +571,7 @@ func TestEncrypt_RsaPublicEncryptPrivateDecrypt(t *testing.T) {
 
 func BenchmarkEncrypt_RsaPublicEncrypt(b *testing.B) {
 	b.ResetTimer()
-	pubFileBs, _ := ioutil.ReadFile(filePubPem)
+	pubFileBs, _ := os.ReadFile(filePubPem)
 	for i := 0; i < b.N; i++ {
 		_, _ = KEncr.RsaPublicEncrypt(bytsHello, pubFileBs)
 	}
@@ -535,8 +579,8 @@ func BenchmarkEncrypt_RsaPublicEncrypt(b *testing.B) {
 
 func BenchmarkEncrypt_RsaPrivateDecrypt(b *testing.B) {
 	b.ResetTimer()
-	pubFileBs, _ := ioutil.ReadFile(filePubPem)
-	priFileBs, _ := ioutil.ReadFile(filePriPem)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
 	enc, _ := KEncr.RsaPublicEncrypt(bytsHello, pubFileBs)
 	for i := 0; i < b.N; i++ {
 		_, _ = KEncr.RsaPrivateDecrypt(enc, priFileBs)
@@ -547,19 +591,37 @@ func TestEncrypt_RsaPrivateEncryptPublicDecrypt(t *testing.T) {
 	var enc, des []byte
 	var err error
 
-	pubFileBs, _ := ioutil.ReadFile(filePubPem)
-	priFileBs, _ := ioutil.ReadFile(filePriPem)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
 
-	//私钥加密
+	//私钥加密-1024
 	enc, err = KEncr.RsaPrivateEncrypt(bytsHello, priFileBs)
 	assert.NotEmpty(t, enc)
 	assert.Nil(t, err)
 
-	//公钥解密
+	//公钥解密-1024
 	des, err = KEncr.RsaPublicDecrypt(enc, pubFileBs)
 	assert.NotEmpty(t, des)
 	assert.Nil(t, err)
 	assert.Equal(t, bytsHello, des)
+
+	//私钥加密-1024内容过长
+	enc, err = KEncr.RsaPrivateEncrypt([]byte(strJson7), priFileBs)
+	assert.Empty(t, enc)
+	assert.NotNil(t, err)
+
+	//私钥加密-2048
+	enc, err = KEncr.RsaPrivateEncrypt([]byte(strJson7), priFileBs2048)
+	assert.NotEmpty(t, enc)
+	assert.Nil(t, err)
+
+	//公钥解密-2048
+	des, err = KEncr.RsaPublicDecrypt(enc, pubFileBs2048)
+	assert.NotEmpty(t, des)
+	assert.Nil(t, err)
+	assert.Equal(t, strJson7, string(des))
 
 	//错误的私钥
 	_, err = KEncr.RsaPrivateEncrypt(bytsHello, bytSpeedLight)
@@ -574,11 +636,14 @@ func TestEncrypt_RsaPrivateEncryptPublicDecrypt(t *testing.T) {
 
 	_, err = KEncr.RsaPublicDecrypt(enc, []byte(rsaPublicErrStr))
 	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPublicDecrypt(enc, priFileBs)
+	assert.NotNil(t, err)
 }
 
 func BenchmarkEncrypt_RsaPrivateEncrypt(b *testing.B) {
 	b.ResetTimer()
-	priFileBs, _ := ioutil.ReadFile(filePriPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
 	for i := 0; i < b.N; i++ {
 		_, _ = KEncr.RsaPrivateEncrypt(bytsHello, priFileBs)
 	}
@@ -586,10 +651,213 @@ func BenchmarkEncrypt_RsaPrivateEncrypt(b *testing.B) {
 
 func BenchmarkEncrypt_RsaPublicDecrypt(b *testing.B) {
 	b.ResetTimer()
-	pubFileBs, _ := ioutil.ReadFile(filePubPem)
-	priFileBs, _ := ioutil.ReadFile(filePriPem)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
 	enc, _ := KEncr.RsaPrivateEncrypt(bytsHello, priFileBs)
 	for i := 0; i < b.N; i++ {
 		_, _ = KEncr.RsaPublicDecrypt(enc, pubFileBs)
+	}
+}
+
+func TestEncrypt_RsaPublicEncryptPrivateDecrypt_Long(t *testing.T) {
+	var enc, des []byte
+	var err error
+
+	cont := []byte(tesHtmlDoc)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
+
+	//1024-过长
+	enc, err = KEncr.RsaPublicEncrypt(cont, pubFileBs)
+	assert.Empty(t, enc)
+	assert.NotNil(t, err)
+
+	//2048-过长
+	enc, err = KEncr.RsaPublicEncrypt(cont, pubFileBs2048)
+	assert.Empty(t, enc)
+	assert.NotNil(t, err)
+
+	//1024-long
+	enc, err = KEncr.RsaPublicEncryptLong(cont, pubFileBs)
+	assert.NotEmpty(t, enc)
+	assert.Nil(t, err)
+
+	des, err = KEncr.RsaPrivateDecryptLong(enc, priFileBs)
+	assert.NotEmpty(t, des)
+	assert.Nil(t, err)
+	assert.Equal(t, tesHtmlDoc, string(des))
+
+	//2048-long
+	enc, err = KEncr.RsaPublicEncryptLong(cont, pubFileBs2048)
+	assert.NotEmpty(t, enc)
+	assert.Nil(t, err)
+
+	des, err = KEncr.RsaPrivateDecryptLong(enc, priFileBs2048)
+	assert.NotEmpty(t, des)
+	assert.Nil(t, err)
+	assert.Equal(t, tesHtmlDoc, string(des))
+
+	//错误的公钥
+	_, err = KEncr.RsaPublicEncryptLong(bytsHello, bytSpeedLight)
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPublicEncryptLong(bytsHello, []byte(rsaPublicErrStr))
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPublicEncryptLong(bytsHello, priFileBs)
+	assert.NotNil(t, err)
+
+	//错误的私钥
+	_, err = KEncr.RsaPrivateDecryptLong(enc, bytSpeedLight)
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPrivateDecryptLong(enc, []byte(rsaPrivateErrStr))
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPrivateDecryptLong(enc, pubFileBs)
+	assert.NotNil(t, err)
+
+	//错误的密文
+	_, err = KEncr.RsaPrivateDecryptLong(bytsHello, priFileBs)
+	assert.NotNil(t, err)
+}
+
+func BenchmarkEncrypt_RsaPublicEncryptLong_1024(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPublicEncryptLong(cont, pubFileBs)
+	}
+}
+
+func BenchmarkEncrypt_RsaPublicEncryptLong_2048(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPublicEncryptLong(cont, pubFileBs2048)
+	}
+}
+
+func BenchmarkEncrypt_RsaPrivateDecryptLong_1024(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
+	enc, _ := KEncr.RsaPublicEncryptLong(cont, pubFileBs)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPrivateDecryptLong(enc, priFileBs)
+	}
+}
+
+func BenchmarkEncrypt_RsaPrivateDecryptLong_2048(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
+	enc, _ := KEncr.RsaPublicEncryptLong(cont, pubFileBs2048)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPrivateDecryptLong(enc, priFileBs2048)
+	}
+}
+
+func TestEncrypt_RsaPrivateEncryptPublicDecrypt_Long(t *testing.T) {
+	var enc, des []byte
+	var err error
+
+	cont := []byte(tesHtmlDoc)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
+
+	//1024-过长
+	enc, err = KEncr.RsaPrivateEncrypt(cont, priFileBs)
+	assert.Empty(t, enc)
+	assert.NotNil(t, err)
+
+	//2048-过长
+	enc, err = KEncr.RsaPrivateEncrypt(cont, priFileBs2048)
+	assert.Empty(t, enc)
+	assert.NotNil(t, err)
+
+	//1024-long
+	enc, err = KEncr.RsaPrivateEncryptLong(cont, priFileBs)
+	assert.NotEmpty(t, enc)
+	assert.Nil(t, err)
+
+	des, err = KEncr.RsaPublicDecryptLong(enc, pubFileBs)
+	assert.NotEmpty(t, des)
+	assert.Nil(t, err)
+	assert.Equal(t, tesHtmlDoc, string(des))
+
+	//2048-long
+	enc, err = KEncr.RsaPrivateEncryptLong(cont, priFileBs2048)
+	assert.NotEmpty(t, enc)
+	assert.Nil(t, err)
+
+	des, err = KEncr.RsaPublicDecryptLong(enc, pubFileBs2048)
+	assert.NotEmpty(t, des)
+	assert.Nil(t, err)
+	assert.Equal(t, tesHtmlDoc, string(des))
+
+	//错误的私钥
+	_, err = KEncr.RsaPrivateEncryptLong(bytsHello, bytSpeedLight)
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPrivateEncryptLong(bytsHello, []byte(rsaPrivateErrStr))
+	assert.NotNil(t, err)
+
+	//错误的公钥
+	_, err = KEncr.RsaPublicDecryptLong(enc, bytSpeedLight)
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPublicDecryptLong(enc, []byte(rsaPublicErrStr))
+	assert.NotNil(t, err)
+
+	_, err = KEncr.RsaPublicDecryptLong(enc, priFileBs)
+	assert.NotNil(t, err)
+}
+
+func BenchmarkEncrypt_RsaPrivateEncryptLong_1024(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	priFileBs, _ := os.ReadFile(filePriPem)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPrivateEncryptLong(cont, priFileBs)
+	}
+}
+
+func BenchmarkEncrypt_RsaPrivateEncryptLong_2048(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPrivateEncryptLong(cont, priFileBs2048)
+	}
+}
+
+func BenchmarkEncrypt_RsaPublicDecryptLong_1024(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	pubFileBs2048, _ := os.ReadFile(filePubPem2048)
+	priFileBs2048, _ := os.ReadFile(filePriPem2048)
+	enc, _ := KEncr.RsaPrivateEncryptLong(cont, priFileBs2048)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPublicDecryptLong(enc, pubFileBs2048)
+	}
+}
+
+func BenchmarkEncrypt_RsaPublicDecryptLong_2048(b *testing.B) {
+	b.ResetTimer()
+	cont := []byte(tesHtmlDoc)
+	pubFileBs, _ := os.ReadFile(filePubPem)
+	priFileBs, _ := os.ReadFile(filePriPem)
+	enc, _ := KEncr.RsaPrivateEncryptLong(cont, priFileBs)
+	for i := 0; i < b.N; i++ {
+		_, _ = KEncr.RsaPublicDecryptLong(enc, pubFileBs)
 	}
 }

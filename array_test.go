@@ -671,11 +671,15 @@ func TestArray_ArraySearchItem(t *testing.T) {
 	cond2 := map[string]interface{}{"Gender": false}
 	res = KArr.ArraySearchItem(perStuMps, cond2)
 
-	//空条件
-	cond3 := map[string]interface{}{}
+	cond3 := map[string]interface{}{"Gender": true}
 	res = KArr.ArraySearchItem(perStuMps, cond3)
+
+	//空条件
+	cond4 := map[string]interface{}{}
+	res = KArr.ArraySearchItem(perStuMps, cond4)
 	assert.Empty(t, res)
 
+	//异常
 	KArr.ArraySearchItem(strHello, map[string]interface{}{"a": 1})
 }
 
@@ -712,6 +716,15 @@ func TestArray_ArraySearchMutil(t *testing.T) {
 	cond2 := map[string]interface{}{"Gender": false}
 	res = KArr.ArraySearchMutil(perStuMps, cond2)
 
+	cond3 := map[string]interface{}{"Gender": true}
+	res = KArr.ArraySearchMutil(perStuMps, cond3)
+
+	//空条件
+	cond4 := map[string]interface{}{}
+	res = KArr.ArraySearchMutil(perStuMps, cond4)
+	assert.Empty(t, res)
+
+	//异常
 	KArr.ArraySearchMutil(strHello, map[string]interface{}{"a": 1})
 }
 
@@ -966,6 +979,7 @@ func TestArray_InArray(t *testing.T) {
 
 	var res bool
 
+	//查找数组
 	res = KArr.InArray(9, naturalArr)
 	assert.True(t, res)
 
@@ -975,6 +989,11 @@ func TestArray_InArray(t *testing.T) {
 	res = KArr.InArray(personMp3, crowd)
 	assert.False(t, res)
 
+	//查找字典
+	res = KArr.InArray(20, personMp1)
+	assert.True(t, res)
+
+	//异常
 	KArr.InArray(9, strHello)
 }
 
@@ -1190,6 +1209,10 @@ func TestArray_ArrayRand(t *testing.T) {
 	//字典
 	res = KArr.ArrayRand(strMp1, 3)
 	assert.Equal(t, 3, len(res))
+
+	//长度
+	res = KArr.ArrayRand(ssSingle, 90)
+	assert.Equal(t, 11, len(res))
 }
 
 func TestArray_Panic_Arr(t *testing.T) {
@@ -1268,9 +1291,7 @@ func BenchmarkArray_CutSlice(b *testing.B) {
 }
 
 func TestArray_NewStrMapItf(t *testing.T) {
-	var res map[string]interface{}
-
-	res = KArr.NewStrMapItf()
+	res := KArr.NewStrMapItf()
 	assert.NotNil(t, res)
 	assert.Empty(t, res)
 }
@@ -1283,9 +1304,7 @@ func BenchmarkArray_NewStrMapItf(b *testing.B) {
 }
 
 func TestArray_NewStrMapStr(t *testing.T) {
-	var res map[string]string
-
-	res = KArr.NewStrMapStr()
+	res := KArr.NewStrMapStr()
 	assert.NotNil(t, res)
 	assert.Empty(t, res)
 }
@@ -1297,3 +1316,56 @@ func BenchmarkArray_NewStrMapStr(b *testing.B) {
 	}
 }
 
+func TestArray_CopyStruct(t *testing.T) {
+	var acc1 userAccountJson
+	var acc2 = new(userAccountJson)
+	var res interface{}
+
+	//目标非指针
+	res = KArr.CopyStruct(acc1)
+	assert.Nil(t, res)
+
+	//目标非结构体
+	res = KArr.CopyStruct(&ssSingle)
+	assert.Nil(t, res)
+
+	//没有复制源
+	res = KArr.CopyStruct(acc2)
+	assert.Equal(t, res, acc2)
+
+	//正常
+	res = KArr.CopyStruct(acc2, account1, personS5)
+	user, ok := res.(*userAccountJson)
+	assert.NotEmpty(t, user)
+	assert.True(t, ok)
+	assert.Equal(t, user.ID, account1.ID)
+	assert.Equal(t, user.Type, account1.Type)
+	assert.Equal(t, user.Nickname, account1.Nickname)
+	assert.Equal(t, user.Avatar, account1.Avatar)
+	assert.Equal(t, user.Name, personS5.Name)
+	assert.Equal(t, user.Addr, personS5.Addr)
+	assert.Equal(t, user.Age, personS5.Age)
+	assert.Equal(t, user.Gender, personS5.Gender)
+
+	//引用
+	res = KArr.CopyStruct(acc2, &account1, &personS5)
+	user, ok = res.(*userAccountJson)
+	assert.NotEmpty(t, user)
+	assert.True(t, ok)
+	assert.Equal(t, user.ID, account1.ID)
+	assert.Equal(t, user.Type, account1.Type)
+	assert.Equal(t, user.Nickname, account1.Nickname)
+	assert.Equal(t, user.Avatar, account1.Avatar)
+	assert.Equal(t, user.Name, personS5.Name)
+	assert.Equal(t, user.Addr, personS5.Addr)
+	assert.Equal(t, user.Age, personS5.Age)
+	assert.Equal(t, user.Gender, personS5.Gender)
+}
+
+func BenchmarkLkkArray_CopyStruct(b *testing.B) {
+	b.ResetTimer()
+	var acc = new(userAccountJson)
+	for i := 0; i < b.N; i++ {
+		KArr.CopyStruct(acc, account1)
+	}
+}

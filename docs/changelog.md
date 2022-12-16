@@ -2,6 +2,404 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.3.6]- 2022-11-29
+
+#### Added
+
+- 新增`KOS.DownloadFile`,文件下载
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.3.5]- 2022-10-10
+
+#### Added
+
+- 新增`KStr.StrOffset`,字符串整体偏移
+
+#### Fixed
+
+- fix ioutil.ReadAll Deprecated, replace to io.ReadAll
+- fix ioutil.ReadFile Deprecated, replace to os.ReadFile
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.3.4]- 2022-09-05
+
+#### Added
+
+- 新增`LkkFile.Md5Reader`
+- 新增`LkkFile.ShaXReader`
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- 重命名 `LkkFile.Md5` 为 `LkkFile.Md5File`
+- 重命名 `LkkFile.ShaX` 为 `LkkFile.ShaXFile`
+
+#### Removed
+
+- none
+
+## [v0.3.3]- 2022-08-01
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 优化`KFile.CopyFile`
+- 优化`KFile.FastCopy`
+- 优化`KFile.CopyDir`
+- 优化`KFile.DelDir`
+- 优化`KFile.WriteFile`
+- 优化`KFile.FileTree`
+- 优化`KFile.Md5`
+- 优化`KFile.IsZip`
+- 优化`KFile.TarGz`
+- 优化`KFile.UnTarGz`
+- 优化os_darwin_cgo下`getProcessPathByPid`
+- 优化os_darwin_cgo下`LkkOS.CpuUsage`
+- 优化os_linux下`getPidByInode`
+- 优化os_linux下`LkkOS.Uptime`
+- 优化os_windows下`LkkOS.MemoryUsage`
+- 优化os_windows下`LkkOS.CpuUsage`
+- 优化os_windows下`LkkOS.DiskUsage`
+- 优化os_windows下`LkkOS.Uptime`
+- 优化os_windows下`LkkOS.GetBiosInfo`
+- 优化os_windows下`LkkOS.GetBoardInfo`
+- 优化os_windows下`LkkOS.GetCpuInfo`
+- 优化os_windows下`LkkOS.IsProcessExists`
+- 优化`isEmpty`
+- 优化`shaXByte`
+- 优化`pkcs7UnPadding`
+
+#### Changed
+
+- 修改`KFile.CopyLink`,增加`cover`文件覆盖参数
+- 修改`LkkOS.HomeDir`,不再自行区分windows/unix,使用自带的`os.UserHomeDir`
+
+#### Removed
+
+- 删除os_darwin下`getPidByPort`
+- 删除os_windows下`getPidByPort`
+
+## [v0.3.2]- 2022-06-26
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 修复`KConv.IsFloat`
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.3.1]- 2022-06-21
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 修复`KFile.Touch`,创建文件前检查文件是否存在
+- 修复非cgo的darwin下`KOS.GetProcessExecPath`编译失败问题
+
+#### Changed
+
+- `SystemInfo`系统信息结构体增加`SystemArch`字段
+
+#### Removed
+
+- none
+
+## [v0.3.0]- 2022-05-27
+
+#### Added
+
+- 新增`KStr.PasswordSafeLevel`,检查密码安全等级
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.9]- 2022-04-15
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 修复`KStr.MatchEquations`
+
+#### Changed
+
+- 优化`LkkEncrypt.aesDecrypt`
+
+#### Removed
+
+- none
+
+## [v0.2.8]- 2022-04-15
+
+#### Added
+
+- none
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- rename `KArr.CopyToStruct` to `KArr.CopyStruct`
+
+#### Removed
+
+- none
+
+## [v0.2.7]- 2022-04-14
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 修改`reflectTypesMap`,获取匿名字段
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.6]- 2022-04-14
+
+#### Added
+
+- 新增`KArr.CopyToStruct`,拷贝结构体
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.5]- 2022-03-31
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 优化`KEncr.AuthCode`
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.4]- 2022-03-05
+
+#### Added
+
+- 新增`KDbug.Stacks`,获取堆栈信息
+
+#### Fixed
+
+- 修改`KDbug.GetCallName`,参数`f`支持`uintptr`类型
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.3]- 2022-01-21
+
+#### Added
+
+- 新增`KStr.UuidV5`,根据提供的字符,使用sha1生成36位哈希值
+
+#### Fixed
+
+- 修改`KStr.UuidV4`,添加version/variant信息
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.2]- 2022-01-10
+
+#### Added
+
+- 新增`KEncr.RsaPrivateEncryptLong`使用RSA私钥加密长文本
+- 新增`KEncr.RsaPublicDecryptLong`使用RSA公钥解密长文本
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.1]- 2022-01-05
+
+#### Added
+
+- 新增`KStr.ChunkBytes`将字节切片分割为多个小块
+- 新增`KEncr.RsaPublicEncryptLong`使用RSA公钥加密长文本
+- 新增`KEncr.RsaPrivateDecryptLong`使用RSA私钥解密长文本
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.2.0]- 2021-12-09
+
+#### Added
+
+- 新增`KStr.ToRunes`将字符串转为字符切片
+- 新增`KConv.ToInterfaces`将变量转为接口切片
+- 新增`KDbug.WrapError`错误包裹
+
+#### Fixed
+
+- 修改`KStr.IsASCII`根据字符串长度使用不同方法
+
+#### Changed
+
+- 重命名`KStr.IsHexcolor`为`IsHexColor`
+- 重命名`KStr.IsRGBcolor`为`IsRgbColor`
+- 将部分公开变量转为私有
+
+#### Removed
+
+- none
+
+## [v0.1.9]- 2021-11-27
+
+#### Added
+
+- 新增`IsPointer`检查变量是否指针类型
+
+#### Fixed
+
+- none
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.1.8]- 2021-11-08
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 修复`KDbug.DumpPrint`打印多变量问题
+- 修改`KStr.Ucwords`因go1.18废弃strings.Title,使用cases.Title代替
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
+## [v0.1.7]- 2021-10-15
+
+#### Added
+
+- none
+
+#### Fixed
+
+- 修复`KEncr.AuthCode`中keyb变化问题
+
+#### Changed
+
+- none
+
+#### Removed
+
+- none
+
 ## [v0.1.6]- 2021-8-21
 
 #### Added

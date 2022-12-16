@@ -13,6 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
+	"math"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -25,7 +28,6 @@ import (
 func dumpPrint(vs ...interface{}) {
 	for _, v := range vs {
 		fmt.Printf("%+v\n", v)
-		//fmt.Printf("%#v\n", v)
 	}
 }
 
@@ -64,13 +66,13 @@ func isMap(val interface{}) bool {
 
 // isStruct 检查变量是否结构体.
 func isStruct(val interface{}) bool {
-	r := reflectPtr(reflect.ValueOf(val))
+	r, _ := reflectFinalValue(reflect.ValueOf(val))
 	return r.Kind() == reflect.Struct
 }
 
 // isInterface 变量是否接口.
 func isInterface(val interface{}) bool {
-	r := reflectPtr(reflect.ValueOf(val))
+	r, _ := reflectFinalValue(reflect.ValueOf(val))
 	return r.Kind() == reflect.Invalid
 }
 
@@ -161,10 +163,6 @@ func isNumeric(val interface{}) bool {
 
 // isNil 检查变量是否nil.
 func isNil(val interface{}) bool {
-	if val == nil {
-		return true
-	}
-
 	rv := reflect.ValueOf(val)
 	switch rv.Kind() {
 	case reflect.Invalid:
@@ -172,14 +170,12 @@ func isNil(val interface{}) bool {
 	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.Slice, reflect.Interface:
 		return rv.IsNil()
 	}
-	return false
+
+	return val == nil
 }
 
 // isEmpty 检查变量是否为空.
 func isEmpty(val interface{}) bool {
-	if val == nil {
-		return true
-	}
 	v := reflect.ValueOf(val)
 	switch v.Kind() {
 	case reflect.Invalid:
@@ -218,6 +214,23 @@ func isLittleEndian() bool {
 	// 小端: 04 (03 02 01)
 	// 大端: 01 (02 03 04)
 	return (b == 0x04)
+}
+
+// isUrl 字符串是否URL.
+func isUrl(str string) bool {
+	if str == "" || len(str) <= 3 || utf8.RuneCountInString(str) >= 2083 || strings.HasPrefix(str, ".") {
+		return false
+	}
+
+	res, err := url.ParseRequestURI(str)
+	if err != nil {
+		return false //Couldn't even parse the url
+	}
+	if len(res.Scheme) == 0 {
+		return false //No Scheme found
+	}
+
+	return true
 }
 
 // getEndian 获取系统字节序类型,小端返回binary.LittleEndian,大端返回binary.BigEndian .
@@ -274,18 +287,36 @@ func numeric2Float(val interface{}) (res float64, err error) {
 func md5Byte(str []byte, length uint8) []byte {
 	var res []byte
 	h := md5.New()
-	_, _ = h.Write(str)
-
-	hBytes := h.Sum(nil)
-	dst := make([]byte, hex.EncodedLen(len(hBytes)))
-	hex.Encode(dst, hBytes)
-	if length > 0 && length < 32 {
-		res = dst[:length]
-	} else {
-		res = dst
+	_, err := h.Write(str)
+	if err == nil {
+		hashInBytes := h.Sum(nil)
+		dst := make([]byte, hex.EncodedLen(len(hashInBytes)))
+		hex.Encode(dst, hashInBytes)
+		if length > 0 && length < 32 {
+			res = dst[:length]
+		} else {
+			res = dst
+		}
 	}
 
 	return res
+}
+
+// md5Reader 计算Reader的 MD5 散列值.
+func md5Reader(reader io.Reader, length uint8) (res []byte, err error) {
+	h := md5.New()
+	if _, err = io.Copy(h, reader); err == nil {
+		hashInBytes := h.Sum(nil)
+		dst := make([]byte, hex.EncodedLen(len(hashInBytes)))
+		hex.Encode(dst, hashInBytes)
+		if length > 0 && length < 32 {
+			res = dst[:length]
+		} else {
+			res = dst
+		}
+	}
+
+	return
 }
 
 // shaXByte 计算字节切片的 shaX 散列值,x为1/256/512.
@@ -294,27 +325,47 @@ func shaXByte(str []byte, x uint16) []byte {
 	switch x {
 	case 1:
 		h = sha1.New()
-		break
 	case 256:
 		h = sha256.New()
-		break
 	case 512:
 		h = sha512.New()
-		break
 	default:
 		panic(fmt.Sprintf("[shaXByte]`x must be in [1, 256, 512]; but: %d", x))
 	}
 
-	h.Write(str)
+	_, _ = h.Write(str)
+	hashInBytes := h.Sum(nil)
+	res := make([]byte, hex.EncodedLen(len(hashInBytes)))
+	hex.Encode(res, hashInBytes)
 
-	hBytes := h.Sum(nil)
-	res := make([]byte, hex.EncodedLen(len(hBytes)))
-	hex.Encode(res, hBytes)
 	return res
 }
 
+// shaXReader 计算Reader的 shaX 散列值,x为1/256/512.
+func shaXReader(reader io.Reader, x uint16) (res []byte, err error) {
+	var h hash.Hash
+	switch x {
+	case 1:
+		h = sha1.New()
+	case 256:
+		h = sha256.New()
+	case 512:
+		h = sha512.New()
+	default:
+		panic(fmt.Sprintf("[shaXReader]`x must be in [1, 256, 512]; but: %d", x))
+	}
+
+	if _, err = io.Copy(h, reader); err == nil {
+		hashInBytes := h.Sum(nil)
+		res = make([]byte, hex.EncodedLen(len(hashInBytes)))
+		hex.Encode(res, hashInBytes)
+	}
+
+	return
+}
+
 // arrayValues 返回arr(数组/切片/字典/结构体)中所有的值.
-// filterZero 是否过滤零值元素(nil,false,0,'',[]),true时排除零值元素,false时保留零值元素.
+// filterZero 是否过滤零值元素(nil,false,0,”,[]),true时排除零值元素,false时保留零值元素.
 func arrayValues(arr interface{}, filterZero bool) []interface{} {
 	var res []interface{}
 	var fieldVal reflect.Value
@@ -350,13 +401,39 @@ func arrayValues(arr interface{}, filterZero bool) []interface{} {
 	return res
 }
 
-// reflectPtr 获取反射的指向.
-func reflectPtr(r reflect.Value) reflect.Value {
+// reflectFinalValue 获取反射的最终值.
+func reflectFinalValue(r reflect.Value) (reflect.Value, bool) {
+	var isPtr bool
 	// 如果是指针,则获取其所指向的元素
 	if r.Kind() == reflect.Ptr {
 		r = r.Elem()
+		isPtr = true
 	}
-	return r
+	return r, isPtr
+}
+
+// reflectFinalType 获取反射的最终类型.
+func reflectFinalType(r reflect.Type) (reflect.Type, bool) {
+	var isPtr bool
+	// 如果是指针,则获取其所指向的元素
+	if r.Kind() == reflect.Ptr {
+		r = r.Elem()
+		isPtr = true
+	}
+	return r, isPtr
+}
+
+// reflectTypesMap 递归获取反射字段类型Map.
+func reflectTypesMap(r reflect.Type, res map[string]reflect.Type) {
+	for i := 0; i < r.NumField(); i++ {
+		field := r.Field(i)
+		if field.Anonymous { //匿名字段
+			subTyp := r.Field(i).Type
+			reflectTypesMap(subTyp, res)
+		} else if field.PkgPath == "" { //公开字段
+			res[field.Name] = field.Type
+		}
+	}
 }
 
 // reflect2Itf 将反射值转为接口(原值)
@@ -398,7 +475,7 @@ func structVal(obj interface{}) (reflect.Value, error) {
 	return v, nil
 }
 
-// structFields 获取结构体的字段;all是否包含所有字段(包括未导出的).
+// structFields 获取结构体的字段切片;all是否包含所有字段(包括未导出的).
 func structFields(obj interface{}, all bool) ([]reflect.StructField, error) {
 	v, e := structVal(obj)
 	if e != nil {
@@ -693,19 +770,19 @@ func pkcs7Padding(cipherText []byte, blockSize int, isZero bool) []byte {
 
 // pkcs7UnPadding PKCS7拆解.
 // origData为源数据;blockSize为分组长度.
-func pkcs7UnPadding(origData []byte, blockSize int) []byte {
+func pkcs7UnPadding(origData []byte, blockSize int) (res []byte) {
 	//origData = zeroUnPadding(origData)
 	olen := len(origData)
 	if origData == nil || olen == 0 || blockSize <= 0 || olen%blockSize != 0 {
-		return nil
+		return
 	}
 
-	unpadding := int(origData[olen-1])
-	if unpadding > olen {
-		return nil
+	unPadding := int(origData[olen-1])
+	if unPadding <= olen {
+		res = origData[:(olen - unPadding)]
 	}
 
-	return origData[:(olen - unpadding)]
+	return
 }
 
 // zeroPadding PKCS7使用0填充.
@@ -826,6 +903,11 @@ func bool2Int(val bool) int {
 // str2Bytes 将字符串转换为字节切片.
 func str2Bytes(val string) []byte {
 	return []byte(val)
+}
+
+// str2Runes 将字符串转为字符切片.
+func str2Runes(val string) []rune {
+	return []rune(val)
 }
 
 // bytes2Str 将字节切片转换为字符串.
@@ -1343,6 +1425,31 @@ func similarText(str1, str2 string, len1, len2 int) int {
 	return sum
 }
 
+// chunkBytes 将字节切片分割为多个小块.其中size为每块的长度.
+func chunkBytes(bs []byte, size int) [][]byte {
+	bsLen := len(bs)
+	if bsLen == 0 || size <= 0 {
+		return nil
+	} else if bsLen < size {
+		return [][]byte{bs}
+	}
+
+	var start, last int
+	pages := int(math.Ceil(float64(bsLen) / float64(size)))
+	res := make([][]byte, pages)
+	for i := 0; i < pages; i++ {
+		last = start + size
+		if last > bsLen {
+			res[i] = bs[start:]
+		} else {
+			res[i] = bs[start:last]
+		}
+		start = last
+	}
+
+	return res
+}
+
 // GetVariateType 获取变量类型.
 func GetVariateType(v interface{}) string {
 	return fmt.Sprintf("%T", v)
@@ -1363,6 +1470,19 @@ func GetVariatePointerAddr(val interface{}) int64 {
 	return res
 }
 
+// IsPointer 检查变量是否指针类型;
+// notNil 是否检查变量非nil.
+func IsPointer(val interface{}, notNil bool) (res bool) {
+	v := reflect.ValueOf(val)
+	if v.Kind() == reflect.Ptr {
+		if !notNil || (notNil && val != nil) {
+			res = true
+		}
+	}
+
+	return
+}
+
 // VerifyFunc 验证是否函数,并且参数个数、类型是否正确.
 // 返回有效的函数、有效的参数.
 func VerifyFunc(f interface{}, args ...interface{}) (vf reflect.Value, vargs []reflect.Value, err error) {
@@ -1372,33 +1492,41 @@ func VerifyFunc(f interface{}, args ...interface{}) (vf reflect.Value, vargs []r
 	}
 
 	tf := vf.Type()
-	_len := len(args)
-	if tf.NumIn() != _len {
-		return reflect.ValueOf(nil), nil, fmt.Errorf("[VerifyFunc] %d number of the argument is incorrect", _len)
+	num := len(args)
+	if tf.NumIn() != num {
+		return reflect.ValueOf(nil), nil, fmt.Errorf("[VerifyFunc] %d number of the argument is incorrect", num)
 	}
 
-	vargs = make([]reflect.Value, _len)
-	for i := 0; i < _len; i++ {
+	vargs = make([]reflect.Value, num)
+	for i := 0; i < num; i++ {
 		typ := tf.In(i).Kind()
 		if (typ != reflect.Interface) && (typ != reflect.TypeOf(args[i]).Kind()) {
 			return reflect.ValueOf(nil), nil, fmt.Errorf("[VerifyFunc] %d-td argument`s type is incorrect", i+1)
 		}
 		vargs[i] = reflect.ValueOf(args[i])
 	}
+
 	return vf, vargs, nil
 }
 
 // CallFunc 动态调用函数.
-func CallFunc(f interface{}, args ...interface{}) (results []interface{}, err error) {
-	vf, vargs, _err := VerifyFunc(f, args...)
-	if _err != nil {
-		return nil, _err
+func CallFunc(f interface{}, args ...interface{}) ([]interface{}, error) {
+	vf, vargs, err := VerifyFunc(f, args...)
+	if err != nil {
+		return nil, err
 	}
+
 	ret := vf.Call(vargs)
-	_len := len(ret)
-	results = make([]interface{}, _len)
-	for i := 0; i < _len; i++ {
+	num := len(ret)
+	results := make([]interface{}, num)
+	for i := 0; i < num; i++ {
 		results[i] = ret[i].Interface()
 	}
-	return
+	return results, nil
+}
+
+// trim 字符串修剪.
+func trim(str string, characterMask ...string) string {
+	mask := getTrimMask(characterMask)
+	return strings.Trim(str, mask)
 }

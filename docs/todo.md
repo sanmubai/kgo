@@ -107,8 +107,17 @@
 - github.com/qit-team/snow-core
 - github.com/willf/pad
 - github.com/serkanalgur/phpfuncs
-
-
+- https://github.com/Nx-117/cyan
+- https://github.com/ThreeKing2018/goutil
+- https://github.com/tal-tech/xtools
+- https://github.com/php2go/php2go
+- https://github.com/yunionio/pkg
+- https://github.com/samber/lo
+- https://github.com/fishedee/tools
+- https://github.com/thoas/go-funk
+- https://gitee.com/tym_hmm/go-helper
+- https://github.com/hyacinthus/x
+- https://github.com/fufuok/utils
 
 
 ### 其他库

@@ -1,6 +1,7 @@
 package kgo
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -21,6 +22,7 @@ import (
 // SystemInfo 系统信息
 type SystemInfo struct {
 	ServerName   string  `json:"server_name"`    //服务器名称
+	SystemArch   string  `json:"system_arch"`    //系统架构
 	SystemOs     string  `json:"system_os"`      //操作系统名称
 	Runtime      uint64  `json:"run_time"`       //服务运行时间,纳秒
 	Uptime       uint64  `json:"up_time"`        //操作系统运行时间,秒
@@ -180,11 +182,11 @@ func (ko *LkkOS) IsPrivateIp(str string) (bool, error) {
 		return false, errors.New("[IsPrivateIp]`str is not valid ip")
 	}
 
-	if KPrivCidrs == nil {
-		KPrivCidrs = ko.PrivateCIDR()
+	if kPrivCidrs == nil {
+		kPrivCidrs = ko.PrivateCIDR()
 	}
-	for i := range KPrivCidrs {
-		if KPrivCidrs[i].Contains(ip) {
+	for i := range kPrivCidrs {
+		if kPrivCidrs[i].Contains(ip) {
 			return true, nil
 		}
 	}
@@ -268,7 +270,7 @@ func (ko *LkkOS) GetIpByHostname(hostname string) (string, error) {
 	return "", err
 }
 
-// GetIpsByHost 获取互联网域名/主机名对应的 IPv4 地址列表.
+// GetIpsByDomain 获取互联网域名/主机名对应的 IPv4 地址列表.
 func (ko *LkkOS) GetIpsByDomain(domain string) ([]string, error) {
 	ips, err := net.LookupIP(domain)
 	if ips != nil {
@@ -516,7 +518,7 @@ func (ko *LkkOS) TriggerGC() {
 	}()
 }
 
-// MemoryGetUsage 获取当前go程序的内存使用,返回字节数.
+// GoMemory 获取当前go程序的内存使用,返回字节数.
 func (ko *LkkOS) GoMemory() uint64 {
 	stat := new(runtime.MemStats)
 	runtime.ReadMemStats(stat)
@@ -551,6 +553,7 @@ func (ko *LkkOS) GetSystemInfo() *SystemInfo {
 
 	return &SystemInfo{
 		ServerName:   serverName,
+		SystemArch:   runtime.GOARCH,
 		SystemOs:     runtime.GOOS,
 		Runtime:      uint64(KTime.ServiceUptime()),
 		Uptime:       uptime,
@@ -580,4 +583,69 @@ func (ko *LkkOS) GetSystemInfo() *SystemInfo {
 // GetProcessExecPath 根据PID获取进程的执行路径.
 func (ko *LkkOS) GetProcessExecPath(pid int) string {
 	return getProcessPathByPid(pid)
+}
+
+// HomeDir 获取当前用户的主目录.
+func (ko *LkkOS) HomeDir() (string, error) {
+	return os.UserHomeDir()
+}
+
+// DownloadFile 下载文件.其中
+// url 为文件网址;
+// savePath 为保存路径;
+// cover 是否覆盖已有文件;
+// client 为自定义的请求客户端,不提供时默认使用http.DefaultClient.
+func (ko *LkkOS) DownloadFile(url string, savePath string, cover bool, client *http.Client) (written int64, err error) {
+	if !isUrl(url) {
+		return 0, errors.New("url is not a valid URL")
+	}
+
+	savePath = trim(savePath)
+	if savePath == "" {
+		return 0, errors.New("savePath cannot be empty")
+	}
+
+	//已存在
+	if !cover && KFile.IsExist(savePath) {
+		return 0, nil
+	}
+
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	//父级目录
+	dir := KFile.Dirname(savePath)
+	if err = os.MkdirAll(dir, 0766); err != nil {
+		return 0, err
+	}
+
+	var resp *http.Response
+	resp, err = client.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	//创建文件
+	var out *os.File
+	out, err = os.Create(savePath)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = out.Close()
+	}()
+
+	//添加缓冲 bufio 是通过缓冲来提高效率。
+	wt := bufio.NewWriter(out)
+	written, err = io.Copy(wt, resp.Body)
+	if err == nil {
+		//将缓存的数据写入到文件中
+		err = wt.Flush()
+	}
+
+	return written, err
 }

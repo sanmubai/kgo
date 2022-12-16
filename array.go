@@ -684,24 +684,21 @@ func (ka *LkkArray) ArraySearchItem(arr interface{}, condition map[string]interf
 		panic("[ArraySearchItem]`arr type must be array|slice|map; but : " + typ.String())
 	}
 
-	// 条件为空
-	if len(condition) == 0 {
-		return
-	}
-
-	switch typ {
-	case reflect.Array, reflect.Slice:
-		for i := 0; i < val.Len(); i++ {
-			res = compareConditionMap(condition, val.Index(i).Interface())
-			if res != nil {
-				return
+	if len(condition) > 0 {
+		switch typ {
+		case reflect.Array, reflect.Slice:
+			for i := 0; i < val.Len(); i++ {
+				res = compareConditionMap(condition, val.Index(i).Interface())
+				if res != nil {
+					return
+				}
 			}
-		}
-	case reflect.Map:
-		for _, k := range val.MapKeys() {
-			res = compareConditionMap(condition, val.MapIndex(k).Interface())
-			if res != nil {
-				return
+		case reflect.Map:
+			for _, k := range val.MapKeys() {
+				res = compareConditionMap(condition, val.MapIndex(k).Interface())
+				if res != nil {
+					return
+				}
 			}
 		}
 	}
@@ -718,25 +715,22 @@ func (ka *LkkArray) ArraySearchMutil(arr interface{}, condition map[string]inter
 		panic("[ArraySearchMutil]`arr type must be array|slice|map; but : " + typ.String())
 	}
 
-	// 条件为空
-	if len(condition) == 0 {
-		return
-	}
-
-	var item interface{}
-	switch typ {
-	case reflect.Array, reflect.Slice:
-		for i := 0; i < val.Len(); i++ {
-			item = compareConditionMap(condition, val.Index(i).Interface())
-			if item != nil {
-				res = append(res, item)
+	if len(condition) > 0 {
+		var item interface{}
+		switch typ {
+		case reflect.Array, reflect.Slice:
+			for i := 0; i < val.Len(); i++ {
+				item = compareConditionMap(condition, val.Index(i).Interface())
+				if item != nil {
+					res = append(res, item)
+				}
 			}
-		}
-	case reflect.Map:
-		for _, k := range val.MapKeys() {
-			item = compareConditionMap(condition, val.MapIndex(k).Interface())
-			if item != nil {
-				res = append(res, item)
+		case reflect.Map:
+			for _, k := range val.MapKeys() {
+				item = compareConditionMap(condition, val.MapIndex(k).Interface())
+				if item != nil {
+					res = append(res, item)
+				}
 			}
 		}
 	}
@@ -1001,10 +995,7 @@ func (ka *LkkArray) ArrayFlip(arr interface{}) map[interface{}]interface{} {
 // ss是元素为数组/切片的切片.
 func (ka *LkkArray) MergeSlice(filterZero bool, ss ...interface{}) []interface{} {
 	var res []interface{}
-	switch len(ss) {
-	case 0:
-		break
-	default:
+	if len(ss) > 0 {
 		n := 0
 		for i, v := range ss {
 			chkLen := lenArrayOrSlice(v, 3)
@@ -1038,10 +1029,7 @@ func (ka *LkkArray) MergeSlice(filterZero bool, ss ...interface{}) []interface{}
 // ss是元素为字典的切片.
 func (ka *LkkArray) MergeMap(ss ...interface{}) map[interface{}]interface{} {
 	res := make(map[interface{}]interface{})
-	switch len(ss) {
-	case 0:
-		break
-	default:
+	if len(ss) > 0 {
 		for i, v := range ss {
 			val := reflect.ValueOf(v)
 			switch val.Kind() {
@@ -1054,6 +1042,7 @@ func (ka *LkkArray) MergeMap(ss ...interface{}) map[interface{}]interface{} {
 			}
 		}
 	}
+
 	return res
 }
 
@@ -1129,9 +1118,7 @@ func (ka *LkkArray) ArrayRand(arr interface{}, num int) []interface{} {
 		}
 	case reflect.Map:
 		var ks []reflect.Value
-		for _, k := range val.MapKeys() {
-			ks = append(ks, k)
-		}
+		ks = append(ks, val.MapKeys()...)
 		for i, v := range r.Perm(length) {
 			if i < num {
 				res[i] = val.MapIndex(ks[v]).Interface()
@@ -1184,4 +1171,50 @@ func (ka *LkkArray) NewStrMapItf() map[string]interface{} {
 // NewStrMapStr 新建[字符-字符]字典.
 func (ka *LkkArray) NewStrMapStr() map[string]string {
 	return make(map[string]string)
+}
+
+// CopyStruct 将resources的值拷贝到dest目标结构体;
+// 要求dest必须是结构体指针,resources为多个源结构体;若resources存在多个相同字段的元素,结果以最后的为准;
+// 只简单核对字段名,无错误处理,需开发自行检查dest和resources字段类型才可操作.
+func (ka *LkkArray) CopyStruct(dest interface{}, resources ...interface{}) interface{} {
+	dVal := reflect.ValueOf(dest)
+	dTyp := reflect.TypeOf(dest)
+
+	if dTyp.Kind() != reflect.Ptr {
+		return nil
+	}
+
+	//dest是指针,需要.Elem()取得指针指向的value
+	dVal = dVal.Elem()
+	dTyp = dTyp.Elem()
+
+	// 非结构体
+	if dVal.Kind() != reflect.Struct {
+		return nil
+	}
+
+	//目标结构体可导出的字段
+	var dFields = make(map[string]reflect.Type, dTyp.NumField())
+	reflectTypesMap(dTyp, dFields)
+
+	var field string
+	for _, resource := range resources {
+		rVal := reflect.ValueOf(resource)
+		rTyp := rVal.Type()
+		if rTyp.Kind() == reflect.Ptr {
+			rVal = rVal.Elem()
+			rTyp = rTyp.Elem()
+		}
+
+		if rVal.Kind() == reflect.Struct {
+			for i := 0; i < rTyp.NumField(); i++ {
+				field = rTyp.Field(i).Name
+				if typ, ok := dFields[field]; ok {
+					dVal.FieldByName(field).Set(rVal.FieldByName(field).Convert(typ))
+				}
+			}
+		}
+	}
+
+	return dest
 }

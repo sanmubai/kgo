@@ -1,6 +1,7 @@
 package kgo
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -223,5 +224,54 @@ func BenchmarkDebug_GetFuncNames(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		KDbug.GetFuncNames(&KConv)
+	}
+}
+
+func TestDebug_WrapError(t *testing.T) {
+	var err = errors.New("a test error")
+
+	err1 := KDbug.WrapError(nil)
+	assert.NotNil(t, err1)
+	assert.Contains(t, err1.Error(), "parameter error")
+
+	err2 := KDbug.WrapError(err)
+	assert.NotNil(t, err2)
+	assert.Equal(t, err2, err)
+
+	err3 := KDbug.WrapError(err, helloEng, utf8Hello)
+	assert.NotNil(t, err3)
+	assert.Contains(t, err3.Error(), helloEng)
+	assert.Contains(t, err3.Error(), err.Error())
+}
+
+func BenchmarkDebug_WrapError(b *testing.B) {
+	var err = errors.New("a test error")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = KDbug.WrapError(err, helloEng, utf8Hello)
+	}
+}
+
+func TestDebug_Stacks(t *testing.T) {
+	var res1, res2, res3 []byte
+	var len1, len2, len3 int
+
+	res1 = KDbug.Stacks(-1)
+	len1 = len(res1)
+	assert.Greater(t, len1, 1)
+
+	res2 = KDbug.Stacks(0)
+	len2 = len(res2)
+	assert.Greater(t, len1, len2)
+
+	res3 = KDbug.Stacks(1)
+	len3 = len(res3)
+	assert.Greater(t, len2, len3)
+}
+
+func BenchmarkDebug_Stacks(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = KDbug.Stacks(0)
 	}
 }

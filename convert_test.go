@@ -11,7 +11,7 @@ import (
 func TestConvert_Struct2Map(t *testing.T) {
 	//结构体
 	var p1 sPerson
-	gofakeit.Struct(&p1)
+	_ = gofakeit.Struct(&p1)
 	mp1, _ := KConv.Struct2Map(p1, "json")
 	mp2, _ := KConv.Struct2Map(p1, "")
 
@@ -33,7 +33,7 @@ func TestConvert_Struct2Map(t *testing.T) {
 func BenchmarkConvert_Struct2Map_UseTag(b *testing.B) {
 	b.ResetTimer()
 	var p1 sPerson
-	gofakeit.Struct(&p1)
+	_ = gofakeit.Struct(&p1)
 	for i := 0; i < b.N; i++ {
 		_, _ = KConv.Struct2Map(p1, "json")
 	}
@@ -42,7 +42,7 @@ func BenchmarkConvert_Struct2Map_UseTag(b *testing.B) {
 func BenchmarkConvert_Struct2Map_NoTag(b *testing.B) {
 	b.ResetTimer()
 	var p1 sPerson
-	gofakeit.Struct(&p1)
+	_ = gofakeit.Struct(&p1)
 	for i := 0; i < b.N; i++ {
 		_, _ = KConv.Struct2Map(p1, "")
 	}
@@ -753,6 +753,7 @@ func TestConvert_ToStr(t *testing.T) {
 		{fnCb1, "<nil>"},
 		{fnPtr1, ""},
 		{bytsHello, strHello},
+		{bytColon, ":"},
 		{int64(INT64_MAX), "9223372036854775807"},
 		{uint64(UINT64_MAX), "18446744073709551615"},
 		{float32(math.Pi), "3.1415927"},
@@ -903,8 +904,7 @@ func BenchmarkConvert_ToFloat(b *testing.B) {
 }
 
 func TestConvert_Float64ToByte(t *testing.T) {
-	var res []byte
-	res = KConv.Float64ToByte(flPi2)
+	res := KConv.Float64ToByte(flPi2)
 	assert.NotEmpty(t, res)
 }
 
@@ -921,9 +921,7 @@ func TestConvert_Byte2Float64(t *testing.T) {
 		assert.NotEmpty(t, r)
 	}()
 
-	var res float64
-
-	res = KConv.Byte2Float64(bytPi5)
+	res := KConv.Byte2Float64(bytPi5)
 	assert.Equal(t, flPi2, res)
 
 	//不合法
@@ -938,8 +936,7 @@ func BenchmarkConvert_Byte2Float64(b *testing.B) {
 }
 
 func TestConvert_Int64ToByte(t *testing.T) {
-	var res []byte
-	res = KConv.Int64ToByte(intAstronomicalUnit)
+	res := KConv.Int64ToByte(intAstronomicalUnit)
 	assert.NotEmpty(t, res)
 }
 
@@ -956,8 +953,7 @@ func TestConvert_Byte2Int64(t *testing.T) {
 		assert.NotEmpty(t, r)
 	}()
 
-	var res int64
-	res = KConv.Byte2Int64(bytAstronomicalUnit)
+	res := KConv.Byte2Int64(bytAstronomicalUnit)
 	assert.Equal(t, intAstronomicalUnit, res)
 
 	//不合法
@@ -977,7 +973,7 @@ func TestConvert_Byte2Hex(t *testing.T) {
 	res = KConv.Byte2Hex(bytsHello)
 	assert.Equal(t, strHelloHex, res)
 
-	res = KConv.Byte2Hex(bytEmp)
+	res = KConv.Byte2Hex(bytEmpty)
 	assert.Empty(t, res)
 }
 
@@ -994,7 +990,7 @@ func TestConvert_Byte2Hexs(t *testing.T) {
 	res = KConv.Byte2Hexs(bytsHello)
 	assert.Equal(t, strHelloHex, string(res))
 
-	res = KConv.Byte2Hexs(bytEmp)
+	res = KConv.Byte2Hexs(bytEmpty)
 	assert.Empty(t, res)
 }
 
@@ -1029,7 +1025,11 @@ func TestConvert_Hexs2Byte(t *testing.T) {
 	res = KConv.Hexs2Byte(bs)
 	assert.Equal(t, strHello, string(res))
 
-	res = KConv.Byte2Hexs([]byte{})
+	res = KConv.Hexs2Byte([]byte{})
+	assert.Empty(t, res)
+
+	//非16进制
+	res = KConv.Hexs2Byte([]byte(utf8Hello))
 	assert.Empty(t, res)
 }
 
@@ -1042,9 +1042,7 @@ func BenchmarkConvert_Hexs2Byte(b *testing.B) {
 }
 
 func TestConvert_Runes2Bytes(t *testing.T) {
-	var res []byte
-
-	res = KConv.Runes2Bytes(runesHello)
+	res := KConv.Runes2Bytes(runesHello)
 	assert.Equal(t, bytsHello, res)
 }
 
@@ -1124,11 +1122,14 @@ func TestConvert_IsInt(t *testing.T) {
 		expected bool
 	}{
 		{intSpeedLight, true},
-		{flPi1, false},
 		{strSpeedLight, true},
+		{tesStr42, true},
+		{flPi1, false},
 		{strPi6, false},
 		{strHello, false},
+		{strHelloHex, false},
 		{crowd, false},
+		{tesStr17, false},
 		{"", false},
 	}
 	for _, test := range tests {
@@ -1149,12 +1150,17 @@ func TestConvert_IsFloat(t *testing.T) {
 		input    interface{}
 		expected bool
 	}{
-		{intSpeedLight, false},
 		{flPi1, true},
-		{strSpeedLight, false},
 		{strPi6, true},
+		{tesStr44, true},
+		{tesStr45, true},
+		{intSpeedLight, false},
+		{strSpeedLight, false},
 		{strHello, false},
 		{crowd, false},
+		{tesStr17, false},
+		{tesStr21, false},
+		{tesStr43, false},
 		{"", false},
 	}
 	for _, test := range tests {
@@ -1372,5 +1378,25 @@ func BenchmarkConvert_IsPort(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		KConv.IsPort(80)
+	}
+}
+
+func TestConvert_ToInterfaces(t *testing.T) {
+	defer func() {
+		r := recover()
+		assert.Contains(t, r, "[arrayValues]`arr type must be")
+	}()
+
+	res := KConv.ToInterfaces(ssSingle)
+	assert.NotNil(t, res)
+	assert.Equal(t, len(res), len(ssSingle))
+
+	KConv.ToInterfaces(strHello)
+}
+
+func BenchmarkConvert_ToInterfaces(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		KConv.ToInterfaces(ssSingle)
 	}
 }

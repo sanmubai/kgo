@@ -1,3 +1,4 @@
+//go:build darwin
 // +build darwin
 
 package kgo
@@ -33,11 +34,6 @@ func bootTime() (uint64, error) {
 	atomic.StoreUint64(&cachedBootTime, uint64(tv.Sec))
 
 	return uint64(tv.Sec), nil
-}
-
-// getPidByPort 根据端口号获取监听的进程PID.
-func getPidByPort(port int) (pid int) {
-	return
 }
 
 // getIOInfos 获取系统IO信息
@@ -139,7 +135,7 @@ func (ko *LkkOS) GetBiosInfo() *BiosInfo {
 	infos := ko.getIOInfos()
 	if len(infos) > 0 {
 		infoStr := string(infos)
-		res.Version = KStr.Trim(KStr.GetEquationValue(infoStr, "SMBIOS-EPS"), "<", ">", `"`, `'`)
+		res.Version = trim(KStr.GetEquationValue(infoStr, "SMBIOS-EPS"), "<", ">", `"`, `'`)
 	}
 
 	return res
@@ -158,9 +154,9 @@ func (ko *LkkOS) GetBoardInfo() *BoardInfo {
 	infos := ko.getIOInfos()
 	if len(infos) > 0 {
 		infoStr := string(infos)
-		res.Name = KStr.Trim(KStr.GetEquationValue(infoStr, "product-name"), "<", ">", `"`, `'`)
-		res.Version = KStr.Trim(KStr.GetEquationValue(infoStr, "board-id"), "<", ">", `"`, `'`)
-		res.Serial = KStr.Trim(KStr.GetEquationValue(infoStr, "IOPlatformUUID"), "<", ">", `"`, `'`)
+		res.Name = trim(KStr.GetEquationValue(infoStr, "product-name"), "<", ">", `"`, `'`)
+		res.Version = trim(KStr.GetEquationValue(infoStr, "board-id"), "<", ">", `"`, `'`)
+		res.Serial = trim(KStr.GetEquationValue(infoStr, "IOPlatformUUID"), "<", ">", `"`, `'`)
 	}
 
 	return res

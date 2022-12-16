@@ -117,10 +117,14 @@ func TestFile_WriteFile(t *testing.T) {
 	assert.Nil(t, err)
 
 	//无权限写
-	err = KFile.WriteFile(rootFile1, bytsHello, 0777)
+	err = KFile.WriteFile(rootFile1, bytsHello)
 	if KOS.IsLinux() || KOS.IsMac() {
 		assert.NotNil(t, err)
 	}
+
+	//空路径
+	err = KFile.WriteFile("", bytsHello, 0777)
+	assert.NotNil(t, err)
 }
 
 func BenchmarkFile_WriteFile(b *testing.B) {
@@ -170,6 +174,12 @@ func TestFile_GetMime(t *testing.T) {
 	if KOS.IsWindows() {
 		assert.NotEmpty(t, res)
 	}
+
+	res = KFile.GetMime(imgJpg, true)
+
+	//空文件
+	res = KFile.GetMime(gitkeep, false)
+	assert.Empty(t, res)
 
 	//不存在的文件
 	res = KFile.GetMime(fileNone, true)
@@ -280,9 +290,7 @@ func BenchmarkFile_IsWritable(b *testing.B) {
 }
 
 func TestFile_IsExecutable(t *testing.T) {
-	var res bool
-
-	res = KFile.IsExecutable(fileNone)
+	res := KFile.IsExecutable(fileNone)
 	assert.False(t, res)
 }
 
@@ -304,7 +312,12 @@ func TestFile_IsLink(t *testing.T) {
 	res = KFile.IsLink(fileLink)
 	assert.True(t, res)
 
+	//非链接
 	res = KFile.IsLink(changLog)
+	assert.False(t, res)
+
+	//不存在
+	res = KFile.IsLink(fileNone)
 	assert.False(t, res)
 }
 
@@ -371,6 +384,10 @@ func TestFile_IsBinary(t *testing.T) {
 
 	res = KFile.IsBinary(imgPng)
 	assert.True(t, res)
+
+	//不存在
+	res = KFile.IsBinary(fileNone)
+	assert.False(t, res)
 }
 
 func BenchmarkFile_IsBinary(b *testing.B) {
@@ -401,9 +418,7 @@ func BenchmarkFile_IsImg(b *testing.B) {
 }
 
 func TestFile_Mkdir(t *testing.T) {
-	var err error
-
-	err = KFile.Mkdir(dirNew, 0777)
+	err := KFile.Mkdir(dirNew, 0777)
 	assert.Nil(t, err)
 }
 
@@ -423,6 +438,19 @@ func TestFile_AbsPath(t *testing.T) {
 
 	res = KFile.AbsPath(fileNone)
 	assert.NotEmpty(t, res)
+
+	//空路径
+	res = KFile.AbsPath("")
+	assert.NotEmpty(t, res)
+
+	//windows下
+	var bt = string(bytAstronomicalUnit)
+	res = KFile.AbsPath(bt)
+	assert.NotEmpty(t, res)
+	if KOS.IsWindows() {
+		chk := KStr.StartsWith(res, "\\", false)
+		assert.True(t, chk)
+	}
 }
 
 func BenchmarkFile_AbsPath(b *testing.B) {
@@ -438,6 +466,7 @@ func TestFile_RealPath(t *testing.T) {
 	res = KFile.RealPath(fileMd)
 	assert.NotEmpty(t, res)
 
+	//不存在的路径
 	res = KFile.RealPath(fileNone)
 	assert.Empty(t, res)
 }
@@ -453,12 +482,19 @@ func TestFile_TouchRenameUnlink(t *testing.T) {
 	var res bool
 	var err error
 
+	//创建不存在的文件
 	res = KFile.Touch(touchfile, 2097152)
 	assert.True(t, res)
 
+	//创建已存在的文件
+	res = KFile.Touch(fileGitkee, 256)
+	assert.False(t, res)
+
+	//重命名
 	err = KFile.Rename(touchfile, renamefile)
 	assert.Nil(t, err)
 
+	//删除
 	err = KFile.Unlink(renamefile)
 	assert.Nil(t, err)
 }
@@ -495,15 +531,24 @@ func TestFile_CopyFile(t *testing.T) {
 	var res int64
 	var err error
 
+	//源文件不存在
+	res, err = KFile.CopyFile(fileNone, imgCopy, FILE_COVER_IGNORE)
+	assert.NotNil(t, err)
+
 	//忽略已存在的
 	res, err = KFile.CopyFile(imgPng, imgCopy, FILE_COVER_IGNORE)
 	assert.Nil(t, err)
 
-	//覆盖已存在的
+	//覆盖已存在的-允许
 	res, err = KFile.CopyFile(imgPng, imgCopy, FILE_COVER_ALLOW)
 	assert.Greater(t, res, int64(0))
 
-	//禁止覆盖
+	//覆盖已存在的-忽略
+	res, err = KFile.CopyFile(imgPng, imgCopy, FILE_COVER_IGNORE)
+	assert.Nil(t, err)
+	assert.Equal(t, int64(0), res)
+
+	//覆盖已存在的-拒绝
 	res, err = KFile.CopyFile(imgPng, imgCopy, FILE_COVER_DENY)
 	assert.NotNil(t, err)
 
@@ -562,20 +607,40 @@ func BenchmarkFile_FastCopy(b *testing.B) {
 func TestFile_CopyLink(t *testing.T) {
 	var err error
 
-	//源和目标相同
-	err = KFile.CopyLink(fileLink, fileLink)
-	assert.Nil(t, err)
+	//创建链接文件
+	if !KFile.IsExist(fileLink) {
+		_ = os.Symlink(filePubPem, fileLink)
+	}
 
-	err = KFile.CopyLink(fileLink, copyLink)
-	assert.Nil(t, err)
-
-	//源文件不存在
-	err = KFile.CopyLink(fileNone, copyLink)
+	//源链接不存在
+	err = KFile.CopyLink(fileNone, copyLink, FILE_COVER_IGNORE)
 	assert.NotNil(t, err)
+
+	//源和目标相同
+	err = KFile.CopyLink(fileLink, fileLink, FILE_COVER_IGNORE)
+	assert.Nil(t, err)
 
 	//目标为空
-	err = KFile.CopyLink(fileLink, "")
+	err = KFile.CopyLink(fileLink, "", FILE_COVER_IGNORE)
 	assert.NotNil(t, err)
+
+	//成功拷贝
+	err = KFile.CopyLink(fileLink, copyLink, FILE_COVER_ALLOW)
+	assert.Nil(t, err)
+	err = KFile.CopyLink(fileLink, copyLink2, FILE_COVER_ALLOW)
+	assert.Nil(t, err)
+
+	//已存在-忽略
+	err = KFile.CopyLink(fileLink, copyLink, FILE_COVER_IGNORE)
+	assert.Nil(t, err)
+
+	//已存在-拒绝
+	err = KFile.CopyLink(fileLink, copyLink, FILE_COVER_DENY)
+	assert.NotNil(t, err)
+
+	//已存在-允许
+	err = KFile.CopyLink(fileLink, copyLink, FILE_COVER_ALLOW)
+	assert.Nil(t, err)
 }
 
 func BenchmarkFile_CopyLink(b *testing.B) {
@@ -583,13 +648,26 @@ func BenchmarkFile_CopyLink(b *testing.B) {
 	var des string
 	for i := 0; i < b.N; i++ {
 		des = fmt.Sprintf(dirLink+"/lnk_%d.copy", i)
-		_ = KFile.CopyLink(fileLink, des)
+		_ = KFile.CopyLink(fileLink, des, FILE_COVER_ALLOW)
 	}
 }
 
 func TestFile_CopyDir(t *testing.T) {
 	var res int64
 	var err error
+
+	//源和目标相同
+	res, err = KFile.CopyDir(dirVendor, dirVendor, FILE_COVER_ALLOW)
+	assert.Equal(t, int64(0), res)
+	assert.Nil(t, err)
+
+	//源不存在
+	res, err = KFile.CopyDir(fileNone, dirTdat, FILE_COVER_IGNORE)
+	assert.NotNil(t, err)
+
+	//源不是目录
+	res, err = KFile.CopyDir(fileMd, dirTdat, FILE_COVER_ALLOW)
+	assert.NotNil(t, err)
 
 	//忽略已存在的
 	res, err = KFile.CopyDir(dirVendor, dirTdat, FILE_COVER_IGNORE)
@@ -603,16 +681,8 @@ func TestFile_CopyDir(t *testing.T) {
 	res, err = KFile.CopyDir(dirVendor, dirTdat, FILE_COVER_DENY)
 	assert.Equal(t, int64(0), res)
 
-	//源和目标相同
-	res, err = KFile.CopyDir(dirVendor, dirVendor, FILE_COVER_ALLOW)
-	assert.Equal(t, int64(0), res)
-
 	//目标为空
 	res, err = KFile.CopyDir(dirVendor, "", FILE_COVER_ALLOW)
-	assert.NotNil(t, err)
-
-	//源不是目录
-	res, err = KFile.CopyDir(fileMd, dirTdat, FILE_COVER_ALLOW)
 	assert.NotNil(t, err)
 }
 
@@ -628,6 +698,10 @@ func BenchmarkFile_CopyDir(b *testing.B) {
 func TestFile_DelDir(t *testing.T) {
 	var err error
 	var chk bool
+
+	//非目录
+	err = KFile.DelDir(fileMd, false)
+	assert.NotNil(t, err)
 
 	//清空目录
 	err = KFile.DelDir(dirCopy, false)
@@ -655,6 +729,14 @@ func TestFile_Img2Base64(t *testing.T) {
 	var res string
 	var err error
 
+	//非图片
+	res, err = KFile.Img2Base64(fileMd)
+	assert.NotNil(t, err)
+
+	//图片不存在
+	res, err = KFile.Img2Base64(imgNone)
+	assert.NotNil(t, err)
+
 	//png
 	res, err = KFile.Img2Base64(imgPng)
 	assert.Nil(t, err)
@@ -664,14 +746,6 @@ func TestFile_Img2Base64(t *testing.T) {
 	res, err = KFile.Img2Base64(imgJpg)
 	assert.Nil(t, err)
 	assert.Contains(t, res, "jpg")
-
-	//非图片
-	res, err = KFile.Img2Base64(fileMd)
-	assert.NotNil(t, err)
-
-	//图片不存在
-	res, err = KFile.Img2Base64(fileNone)
-	assert.NotNil(t, err)
 }
 
 func BenchmarkFile_Img2Base64(b *testing.B) {
@@ -693,8 +767,9 @@ func TestFile_FileTree(t *testing.T) {
 	assert.NotEmpty(t, res)
 
 	//仅文件
-	res = KFile.FileTree(dirVendor, FILE_TREE_FILE, true)
+	res = KFile.FileTree(dirTdat, FILE_TREE_FILE, true)
 	assert.NotEmpty(t, res)
+	assert.GreaterOrEqual(t, len(res), 10)
 
 	//不递归
 	res = KFile.FileTree(dirCurr, FILE_TREE_DIR, false)
@@ -768,58 +843,131 @@ func BenchmarkFile_FormatPath(b *testing.B) {
 	}
 }
 
-func TestFile_Md5(t *testing.T) {
-	var res string
+func TestFile_Md5File_Md5Reader(t *testing.T) {
+	var res1, res2 string
 	var err error
 
-	res, err = KFile.Md5(fileMd, 32)
-	assert.NotEmpty(t, res)
+	fh1, _ := os.Open(fileMd)
+	fh2, _ := os.Open(fileMd)
+	defer func() {
+		_ = fh1.Close()
+		_ = fh2.Close()
+	}()
 
-	res, err = KFile.Md5(fileMd, 16)
+	//16
+	res1, err = KFile.Md5File(fileMd, 16)
+	assert.NotEmpty(t, res1)
 	assert.Nil(t, err)
 
+	res2, err = KFile.Md5Reader(fh1, 16)
+	assert.NotEmpty(t, res2)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, res2)
+
+	//32
+	res1, err = KFile.Md5File(fileMd, 32)
+	assert.NotEmpty(t, res1)
+	assert.Nil(t, err)
+
+	res2, err = KFile.Md5Reader(fh2, 32)
+	assert.NotEmpty(t, res2)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, res2)
+
 	//不存在的文件
-	res, err = KFile.Md5(fileNone, 32)
+	_, err = KFile.Md5File(fileNone, 32)
 	assert.NotNil(t, err)
 }
 
-func BenchmarkFile_Md5(b *testing.B) {
+func BenchmarkFile_Md5File(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = KFile.Md5(fileMd, 32)
+		_, _ = KFile.Md5File(fileMd, 32)
 	}
 }
 
-func TestFile_ShaX(t *testing.T) {
+func BenchmarkFile_Md5Reader(b *testing.B) {
+	b.ResetTimer()
+	fh, _ := os.Open(fileMd)
+	defer func() {
+		_ = fh.Close()
+	}()
+	for i := 0; i < b.N; i++ {
+		_, _ = KFile.Md5Reader(fh, 32)
+	}
+}
+
+func TestFile_ShaXFile_ShaXReader(t *testing.T) {
 	defer func() {
 		r := recover()
 		assert.NotEmpty(t, r)
 	}()
 
-	var res string
+	var res1, res2 string
 	var err error
 
-	res, err = KFile.ShaX(fileGmod, 1)
-	assert.NotEmpty(t, res)
+	fh1, _ := os.Open(fileGmod)
+	fh2, _ := os.Open(fileGmod)
+	fh3, _ := os.Open(fileGmod)
+	defer func() {
+		_ = fh1.Close()
+		_ = fh2.Close()
+		_ = fh3.Close()
+	}()
 
-	res, err = KFile.ShaX(fileGmod, 256)
-	assert.NotEmpty(t, res)
+	//1
+	res1, err = KFile.ShaXFile(fileGmod, 1)
+	assert.NotEmpty(t, res1)
+	assert.Nil(t, err)
 
-	res, err = KFile.ShaX(fileGmod, 512)
-	assert.NotEmpty(t, res)
+	res2, err = KFile.ShaXReader(fh1, 1)
+	assert.NotEmpty(t, res2)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, res2)
+
+	//256
+	res1, err = KFile.ShaXFile(fileGmod, 256)
+	assert.NotEmpty(t, res1)
+	assert.Nil(t, err)
+
+	res2, err = KFile.ShaXReader(fh2, 256)
+	assert.NotEmpty(t, res2)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, res2)
+
+	//512
+	res1, err = KFile.ShaXFile(fileGmod, 512)
+	assert.NotEmpty(t, res1)
+	assert.Nil(t, err)
+
+	res2, err = KFile.ShaXReader(fh3, 512)
+	assert.NotEmpty(t, res2)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, res2)
 
 	//文件不存在
-	res, err = KFile.ShaX(fileNone, 512)
+	_, err = KFile.ShaXFile(fileNone, 512)
 	assert.NotNil(t, err)
 
 	//err x
-	res, err = KFile.ShaX(fileGmod, 32)
+	_, err = KFile.ShaXFile(fileGmod, 32)
 }
 
-func BenchmarkFile_ShaX(b *testing.B) {
+func BenchmarkFile_ShaXFile(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = KFile.ShaX(fileGmod, 256)
+		_, _ = KFile.ShaXFile(fileGmod, 256)
+	}
+}
+
+func BenchmarkFile_ShaXReader(b *testing.B) {
+	b.ResetTimer()
+	fh, _ := os.Open(fileMd)
+	defer func() {
+		_ = fh.Close()
+	}()
+	for i := 0; i < b.N; i++ {
+		_, _ = KFile.ShaXReader(fh, 256)
 	}
 }
 
@@ -848,6 +996,10 @@ func TestFile_Pathinfo(t *testing.T) {
 	//特殊类型
 	res = KFile.Pathinfo(fileGitkee, -1)
 	assert.Empty(t, res["filename"])
+
+	//文件名没有后缀
+	res = KFile.Pathinfo(rootFile1, -1)
+	assert.Equal(t, res["basename"], res["filename"])
 }
 
 func BenchmarkFile_Pathinfo(b *testing.B) {
@@ -961,10 +1113,9 @@ func BenchmarkFile_SafeFileName(b *testing.B) {
 func TestFile_TarGzUnTarGz(t *testing.T) {
 	var res1, res2 bool
 	var err1, err2 error
-	var patterns []string
 
 	//打包
-	patterns = []string{".*.md", ".*.yml", ".*_test.go"}
+	patterns := []string{".*.md", ".*.yml", ".*_test.go"}
 	res1, err1 = KFile.TarGz(dirVendor, targzfile1, patterns...)
 	assert.True(t, res1)
 	assert.Nil(t, err1)
@@ -1077,11 +1228,20 @@ func TestFile_ZipIszipUnzip(t *testing.T) {
 	assert.Nil(t, err)
 
 	//判断
-	res = KFile.IsZip(zipfile1)
+	res, err = KFile.IsZip(zipfile1)
 	assert.True(t, res)
 
-	res = KFile.IsZip(fileNone)
+	//后缀名不符
+	res, err = KFile.IsZip(fileNone)
 	assert.False(t, res)
+	assert.Nil(t, err)
+
+	//无权限检查
+	res, err = KFile.IsZip(rootFile2)
+	if KOS.IsLinux() || KOS.IsMac() {
+		assert.False(t, res)
+		assert.NotNil(t, err)
+	}
 
 	//解压
 	res, err = KFile.UnZip(zipfile1, unzippath1)
@@ -1111,7 +1271,7 @@ func BenchmarkFile_IsZip(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		dst := fmt.Sprintf(dirTdat+"/zip/test_%d.zip", i)
-		KFile.IsZip(dst)
+		_, _ = KFile.IsZip(dst)
 	}
 }
 

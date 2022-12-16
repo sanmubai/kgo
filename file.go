@@ -6,8 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -97,17 +95,17 @@ func (kf *LkkFile) ReadLastLine(fpath string) []byte {
 // WriteFile 将内容写入文件.
 // fpath为文件路径;data为内容;perm为权限,默认为0655.
 func (kf *LkkFile) WriteFile(fpath string, data []byte, perm ...os.FileMode) error {
+	var err error
 	dir := path.Dir(fpath)
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return err
+	if err = os.MkdirAll(dir, os.ModePerm); err == nil {
+		var p os.FileMode = 0655
+		if len(perm) > 0 {
+			p = perm[0]
+		}
+		err = os.WriteFile(fpath, data, p)
 	}
 
-	var p os.FileMode = 0777
-	if len(perm) > 0 {
-		p = perm[0]
-	}
-
-	return os.WriteFile(fpath, data, p)
+	return err
 }
 
 // GetFileMode 获取路径的权限模式.
@@ -119,31 +117,28 @@ func (kf *LkkFile) GetFileMode(fpath string) (os.FileMode, error) {
 	return finfo.Mode(), nil
 }
 
-// AppendFile 插入文件内容.
+// AppendFile 插入文件内容.若文件不存在,则自动创建.
 func (kf *LkkFile) AppendFile(fpath string, data []byte) error {
-	if fpath == "" {
-		return errors.New("[AppendFile] no path provided")
-	}
-
+	var err error
 	var file *os.File
-	filePerm, err := kf.GetFileMode(fpath)
-	if err != nil {
-		// create the file
-		file, err = os.Create(fpath)
-	} else {
-		// open for append
-		file, err = os.OpenFile(fpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, filePerm)
-	}
-	if err != nil {
-		// failed to create or open-for-append the file
-		return err
-	}
 
-	defer func() {
-		_ = file.Close()
-	}()
+	dir := path.Dir(fpath)
+	if err = os.MkdirAll(dir, os.ModePerm); err == nil {
+		var filePerm os.FileMode
+		filePerm, err = kf.GetFileMode(fpath)
+		if err != nil {
+			file, err = os.Create(fpath)
+		} else {
+			file, err = os.OpenFile(fpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, filePerm)
+		}
+		defer func() {
+			_ = file.Close()
+		}()
 
-	_, err = file.Write(data)
+		if err == nil {
+			_, err = file.Write(data)
+		}
+	}
 
 	return err
 }
@@ -153,21 +148,17 @@ func (kf *LkkFile) GetMime(fpath string, fast bool) string {
 	var res string
 	if fast {
 		suffix := filepath.Ext(fpath)
-		//当unix系统中没有相关的mime.types文件时,将返回空
+		//若unix系统中没有相关的mime.types文件时,将返回空
 		res = mime.TypeByExtension(suffix)
 	} else {
 		srcFile, err := os.Open(fpath)
-		if err != nil {
-			return res
+		if err == nil {
+			buffer := make([]byte, 512)
+			_, err = srcFile.Read(buffer)
+			if err == nil {
+				res = http.DetectContentType(buffer)
+			}
 		}
-
-		buffer := make([]byte, 512)
-		_, err = srcFile.Read(buffer)
-		if err != nil {
-			return res
-		}
-
-		res = http.DetectContentType(buffer)
 	}
 
 	return res
@@ -206,12 +197,13 @@ func (kf *LkkFile) IsExist(fpath string) bool {
 
 // IsLink 是否链接文件(软链接,且存在).
 func (kf *LkkFile) IsLink(fpath string) bool {
+	var res bool
 	f, err := os.Lstat(fpath)
-	if err != nil {
-		return false
+	if err == nil {
+		res = f.Mode()&os.ModeSymlink == os.ModeSymlink
 	}
 
-	return f.Mode()&os.ModeSymlink == os.ModeSymlink
+	return res
 }
 
 // IsFile 是否(某类型)文件,且存在.
@@ -264,11 +256,8 @@ func (kf *LkkFile) IsDir(fpath string) bool {
 // IsBinary 是否二进制文件(且存在).
 func (kf *LkkFile) IsBinary(fpath string) bool {
 	cont, err := kf.ReadFile(fpath)
-	if err != nil {
-		return false
-	}
 
-	return isBinary(string(cont))
+	return err == nil && isBinary(string(cont))
 }
 
 // IsImg 是否图片文件(仅检查后缀).
@@ -289,58 +278,53 @@ func (kf *LkkFile) Mkdir(fpath string, mode os.FileMode) error {
 
 // AbsPath 获取绝对路径,path可允许不存在.
 func (kf *LkkFile) AbsPath(fpath string) string {
-	fullPath := ""
 	res, err := filepath.Abs(fpath) // filepath.Abs最终使用到os.Getwd()检查
 	if err != nil {
-		fullPath = filepath.Clean(filepath.Join(`/`, fpath))
-	} else {
-		fullPath = res
+		res = filepath.Clean(filepath.Join(string(os.PathSeparator), fpath))
 	}
 
-	return fullPath
+	return res
 }
 
 // RealPath 返回规范化的真实绝对路径名.path必须存在,若路径不存在则返回空字符串.
 func (kf *LkkFile) RealPath(fpath string) string {
-	fullPath := fpath
+	res := fpath
 	if !filepath.IsAbs(fpath) {
-		wd, err := os.Getwd()
-		if err != nil {
-			return ""
-		}
-		fullPath = filepath.Clean(wd + `/` + fpath)
+		wd, _ := os.Getwd()
+		res = filepath.Clean(wd + `/` + fpath)
 	}
 
-	_, err := os.Stat(fullPath)
+	_, err := os.Stat(res)
 	if err != nil {
 		return ""
 	}
 
-	return fullPath
+	return res
 }
 
-// Touch 快速创建指定大小的文件,size为字节.
-func (kf *LkkFile) Touch(fpath string, size int64) bool {
-	//创建目录
-	destDir := filepath.Dir(fpath)
-	if err := os.MkdirAll(destDir, 0777); err != nil {
-		return false
+// Touch 快速创建指定大小的文件,fpath为文件路径,size为字节.
+func (kf *LkkFile) Touch(fpath string, size int64) (res bool) {
+	//检查文件是否存在
+	if !kf.IsExist(fpath) {
+		//创建目录
+		destDir := filepath.Dir(fpath)
+		err := os.MkdirAll(destDir, 0766)
+		if err == nil {
+			fd, err := os.OpenFile(fpath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0766)
+			defer func() {
+				_ = fd.Close()
+			}()
+			if err == nil {
+				res = true
+				if size > 1 {
+					_, _ = fd.Seek(size-1, 0)
+					_, _ = fd.Write([]byte{0})
+				}
+			}
+		}
 	}
 
-	fd, err := os.OpenFile(fpath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
-	if err != nil {
-		return false
-	}
-	defer func() {
-		_ = fd.Close()
-	}()
-
-	if size > 1 {
-		_, _ = fd.Seek(size-1, 0)
-		_, _ = fd.Write([]byte{0})
-	}
-
-	return true
+	return
 }
 
 // Rename 重命名(或移动)文件/目录.
@@ -353,19 +337,21 @@ func (kf *LkkFile) Unlink(fpath string) error {
 	return os.Remove(fpath)
 }
 
-// CopyFile 拷贝源文件到目标文件,cover为枚举(FILE_COVER_ALLOW、FILE_COVER_IGNORE、FILE_COVER_DENY).
+// CopyFile 拷贝source源文件到dest目标文件,cover为是否覆盖,枚举值(FILE_COVER_ALLOW、FILE_COVER_IGNORE、FILE_COVER_DENY).
 func (kf *LkkFile) CopyFile(source string, dest string, cover LkkFileCover) (int64, error) {
 	if source == dest {
 		return 0, nil
 	}
 
+	// os.Stat,获取文件信息对象,符号链接将跳转
 	sourceStat, err := os.Stat(source)
 	if err != nil {
 		return 0, err
-	} else if !sourceStat.Mode().IsRegular() {
+	} else if !sourceStat.Mode().IsRegular() { //是否普通文件
 		return 0, fmt.Errorf("[CopyFile]`source %s is not a regular file", source)
 	}
 
+	//非覆盖模式
 	if cover != FILE_COVER_ALLOW {
 		if _, err := os.Stat(dest); err == nil {
 			if cover == FILE_COVER_IGNORE {
@@ -401,7 +387,7 @@ func (kf *LkkFile) CopyFile(source string, dest string, cover LkkFileCover) (int
 	var nBytes int64
 	sourceSize := sourceStat.Size()
 	if sourceSize <= 1048576 { //1M以内小文件使用buffer拷贝
-		var total int
+		var total, num int
 		var bufferSize int = 102400
 		if sourceSize < 524288 {
 			bufferSize = 51200
@@ -409,25 +395,23 @@ func (kf *LkkFile) CopyFile(source string, dest string, cover LkkFileCover) (int
 
 		buf := make([]byte, bufferSize)
 		for {
-			n, err := sourceFile.Read(buf)
-			if err != nil && err != io.EOF {
-				return int64(total), err
-			} else if n == 0 {
+			num, err = sourceFile.Read(buf)
+			if err == nil && num > 0 {
+				total += num
+				_, err = destFile.Write(buf[:num])
+			}
+
+			if num == 0 || err != nil {
 				break
 			}
-
-			if _, err := destFile.Write(buf[:n]); err != nil || !kf.IsExist(dest) {
-				return int64(total), err
-			}
-
-			total += n
 		}
 		nBytes = int64(total)
 	} else {
 		nBytes, err = io.Copy(destFile, sourceFile)
-		if err == nil {
-			err = os.Chmod(dest, sourceStat.Mode())
-		}
+	}
+
+	if err == nil || err == io.EOF {
+		err = os.Chmod(dest, sourceStat.Mode())
 	}
 
 	return nBytes, err
@@ -445,7 +429,7 @@ func (kf *LkkFile) FastCopy(source string, dest string) (int64, error) {
 
 	//创建目录
 	destDir := filepath.Dir(dest)
-	if err = os.MkdirAll(destDir, 0777); err != nil {
+	if err = os.MkdirAll(destDir, 0766); err != nil {
 		return 0, err
 	}
 
@@ -458,56 +442,64 @@ func (kf *LkkFile) FastCopy(source string, dest string) (int64, error) {
 	}()
 
 	var bufferSize int = 32768
-	var nBytes int
+	var nBytes, num int
 	buf := make([]byte, bufferSize)
 	for {
-		n, err := sourceFile.Read(buf)
-		if err != nil && err != io.EOF {
-			return int64(nBytes), err
-		} else if n == 0 {
+		num, err = sourceFile.Read(buf)
+		if err == nil && num > 0 {
+			nBytes += num
+			_, err = destFile.Write(buf[:num])
+		}
+		if num == 0 || err != nil {
 			break
 		}
-
-		if _, err := destFile.Write(buf[:n]); err != nil || !kf.IsExist(dest) {
-			return int64(nBytes), err
-		}
-
-		nBytes += n
+	}
+	if err == io.EOF {
+		err = nil
 	}
 
 	return int64(nBytes), err
 }
 
-// CopyLink 拷贝链接.
-func (kf *LkkFile) CopyLink(source string, dest string) error {
+// CopyLink 拷贝链接.source为源链接,dest为目标链接,cover为是否覆盖,枚举值(FILE_COVER_ALLOW、FILE_COVER_IGNORE、FILE_COVER_DENY).
+func (kf *LkkFile) CopyLink(source string, dest string, cover LkkFileCover) error {
 	if source == dest {
 		return nil
 	}
 
-	source, err := os.Readlink(source)
+	//获取原文件地址
+	srcFile, err := os.Readlink(source)
 	if err != nil {
 		return err
 	}
 
-	//移除已存在的目标文件
+	// os.Lstat,获取文件信息对象,符号链接不跳转
 	_, err = os.Lstat(dest)
 	if err == nil {
-		_ = os.Remove(dest)
+		if cover == FILE_COVER_IGNORE { //忽略,不覆盖
+			return nil
+		} else if cover == FILE_COVER_DENY { //禁止覆盖
+			return fmt.Errorf("[CopyLink]`dest File %s already exists", dest)
+		} else { //移除已存在的目标文件
+			_ = os.Remove(dest)
+		}
 	}
+
+	//源目录
+	srcDirStat, _ := os.Stat(filepath.Dir(source))
 
 	//创建目录
 	destDir := filepath.Dir(dest)
-	if err := os.MkdirAll(destDir, 0777); err != nil {
+	if err = os.MkdirAll(destDir, srcDirStat.Mode()); err != nil {
 		return err
 	}
 
-	return os.Symlink(source, dest)
+	return os.Symlink(srcFile, dest)
 }
 
-// CopyDir 拷贝源目录到目标目录,cover为枚举(FILE_COVER_ALLOW、FILE_COVER_IGNORE、FILE_COVER_DENY).
+// CopyDir 拷贝目录.source为源目录,dest为目标目录,cover为是否覆盖,枚举值(FILE_COVER_ALLOW、FILE_COVER_IGNORE、FILE_COVER_DENY).
 func (kf *LkkFile) CopyDir(source string, dest string, cover LkkFileCover) (int64, error) {
 	var total, nBytes int64
-	var err error
 
 	if source == "" || source == dest {
 		return 0, nil
@@ -520,30 +512,33 @@ func (kf *LkkFile) CopyDir(source string, dest string, cover LkkFileCover) (int6
 		return 0, fmt.Errorf("[CopyDir]`source %s is not a directory", source)
 	}
 
-	// create dest dir
+	// 创建目录
 	if err = os.MkdirAll(dest, sourceInfo.Mode()); err != nil {
 		return 0, err
 	}
 
-	directory, _ := os.Open(source)
+	var directory *os.File
+	directory, err = os.Open(source)
 	defer func() {
 		_ = directory.Close()
 	}()
-
-	objects, err := directory.Readdir(-1)
 	if err != nil {
 		return 0, err
 	}
 
+	var objects []os.FileInfo
+	objects, _ = directory.Readdir(-1)
+
+	var destFileInfo os.FileInfo
 	for _, obj := range objects {
 		srcFilePath := filepath.Join(source, obj.Name())
 		destFilePath := filepath.Join(dest, obj.Name())
 
 		if obj.IsDir() {
-			// create sub-directories - recursively
+			// 递归创建子目录
 			nBytes, err = kf.CopyDir(srcFilePath, destFilePath, cover)
 		} else {
-			destFileInfo, err := os.Stat(destFilePath)
+			destFileInfo, err = os.Stat(destFilePath)
 			if err == nil {
 				if cover != FILE_COVER_ALLOW || os.SameFile(obj, destFileInfo) {
 					continue
@@ -551,8 +546,8 @@ func (kf *LkkFile) CopyDir(source string, dest string, cover LkkFileCover) (int6
 			}
 
 			if obj.Mode()&os.ModeSymlink != 0 {
-				// a link
-				_ = kf.CopyLink(srcFilePath, destFilePath)
+				// 链接文件
+				err = kf.CopyLink(srcFilePath, destFilePath, cover)
 			} else {
 				nBytes, err = kf.CopyFile(srcFilePath, destFilePath, cover)
 			}
@@ -560,6 +555,8 @@ func (kf *LkkFile) CopyDir(source string, dest string, cover LkkFileCover) (int6
 
 		if err == nil {
 			total += nBytes
+		} else {
+			break
 		}
 	}
 
@@ -573,13 +570,13 @@ func (kf *LkkFile) DelDir(dir string, delete bool) error {
 		return fmt.Errorf("[DelDir]`dir %s not exists", dir)
 	}
 
-	names, err := os.ReadDir(realPath)
+	files, err := os.ReadDir(realPath)
 	if err != nil {
 		return err
 	}
 
-	for _, entery := range names {
-		file := path.Join([]string{realPath, entery.Name()}...)
+	for _, item := range files {
+		file := path.Join(realPath, item.Name())
 		err = os.RemoveAll(file)
 	}
 
@@ -612,13 +609,6 @@ func (kf *LkkFile) Img2Base64(fpath string) (string, error) {
 // filters为一个或多个文件过滤器函数,FileFilter类型.
 func (kf *LkkFile) FileTree(fpath string, ftype LkkFileTree, recursive bool, filters ...FileFilter) []string {
 	var trees []string
-
-	if kf.IsFile(fpath, FILE_TYPE_ANY) {
-		if ftype != FILE_TREE_DIR {
-			trees = append(trees, fpath)
-		}
-		return trees
-	}
 
 	fpath = strings.TrimRight(fpath, "/\\")
 	files, err := filepath.Glob(filepath.Join(fpath, "*"))
@@ -664,42 +654,46 @@ func (kf *LkkFile) FormatDir(fpath string) string {
 	return formatDir(fpath)
 }
 
-// Md5 获取文件md5值,length指定结果长度32/16.
-func (kf *LkkFile) Md5(fpath string, length uint8) (string, error) {
-	var res string
+// Md5File 获取文件md5值,fpath为文件路径,length指定结果长度32/16.
+func (kf *LkkFile) Md5File(fpath string, length uint8) (string, error) {
+	var res []byte
 	f, err := os.Open(fpath)
-	if err != nil {
-		return res, err
-	}
 	defer func() {
 		_ = f.Close()
 	}()
 
-	hash := md5.New()
-	if _, err := io.Copy(hash, f); err != nil {
-		return res, err
+	if err == nil {
+		res, err = md5Reader(f, length)
 	}
 
-	hashInBytes := hash.Sum(nil)
-	if length > 0 && length < 32 {
-		dst := make([]byte, hex.EncodedLen(len(hashInBytes)))
-		hex.Encode(dst, hashInBytes)
-		res = string(dst[:length])
-	} else {
-		res = hex.EncodeToString(hashInBytes)
-	}
-
-	return res, nil
+	return string(res), err
 }
 
-// ShaX 计算文件的 shaX 散列值,x为1/256/512.
-func (kf *LkkFile) ShaX(fpath string, x uint16) (string, error) {
-	data, err := os.ReadFile(fpath)
-	if err != nil {
-		return "", err
+// Md5Reader 计算Reader的 MD5 散列值.
+func (kf *LkkFile) Md5Reader(reader io.Reader, length uint8) (string, error) {
+	res, err := md5Reader(reader, length)
+	return string(res), err
+}
+
+// ShaXFile 计算文件的 shaX 散列值,fpath为文件路径,x为1/256/512.
+func (kf *LkkFile) ShaXFile(fpath string, x uint16) (string, error) {
+	var res []byte
+	f, err := os.Open(fpath)
+	defer func() {
+		_ = f.Close()
+	}()
+
+	if err == nil {
+		res, err = shaXReader(f, x)
 	}
 
-	return string(shaXByte(data, x)), nil
+	return string(res), err
+}
+
+// ShaXReader 计算Reader的 shaX 散列值,x为1/256/512.
+func (kf *LkkFile) ShaXReader(reader io.Reader, x uint16) (string, error) {
+	res, err := shaXReader(reader, x)
+	return string(res), err
 }
 
 // Pathinfo 获取文件路径的信息.
@@ -720,7 +714,7 @@ func (kf *LkkFile) Pathinfo(fpath string, option int) map[string]string {
 	if ((option & 4) == 4) || ((option & 8) == 8) {
 		basename := ""
 		if (option & 2) == 2 {
-			basename, _ = res["basename"]
+			basename = res["basename"]
 		} else {
 			basename = filepath.Base(fpath)
 		}
@@ -793,13 +787,12 @@ func (kf *LkkFile) TarGz(src string, dstTar string, ignorePatterns ...string) (b
 		res := true
 		for _, pattern := range ignorePatterns {
 			re, err := regexp.Compile(pattern)
-			if err != nil {
-				continue
-			}
-			chk := re.MatchString(file)
-			if chk {
-				res = false
-				break
+			if err == nil {
+				chk := re.MatchString(file)
+				if chk {
+					res = false
+					break
+				}
 			}
 		}
 		return res
@@ -808,12 +801,10 @@ func (kf *LkkFile) TarGz(src string, dstTar string, ignorePatterns ...string) (b
 	src = kf.AbsPath(src)
 	dstTar = kf.AbsPath(dstTar)
 
-	dstDir := kf.Dirname(dstTar)
-	if !kf.IsDir(dstDir) {
-		err := os.MkdirAll(dstDir, os.ModePerm)
-		if err != nil {
-			return false, err
-		}
+	//创建目录
+	dstDir := filepath.Dir(dstTar)
+	if err := os.MkdirAll(dstDir, os.ModePerm); err != nil {
+		return false, err
 	}
 
 	files := kf.FileTree(src, FILE_TREE_ALL, true, filter)
@@ -916,12 +907,10 @@ func (kf *LkkFile) UnTarGz(srcTar, dstDir string) (bool, error) {
 		_ = fr.Close()
 	}()
 
+	//创建目录
 	dstDir = strings.TrimRight(kf.AbsPath(dstDir), "/\\")
-	if !kf.IsDir(dstDir) {
-		err := os.MkdirAll(dstDir, os.ModePerm)
-		if err != nil {
-			return false, err
-		}
+	if err = os.MkdirAll(dstDir, os.ModePerm); err != nil {
+		return false, err
 	}
 
 	// Gzip reader
@@ -944,11 +933,8 @@ func (kf *LkkFile) UnTarGz(srcTar, dstDir string) (bool, error) {
 		// Create diretory before create file
 		newPath := dstDir + "/" + strings.TrimLeft(hdr.Name, "/\\")
 		parentDir := path.Dir(newPath)
-		if !kf.IsDir(parentDir) {
-			err := os.MkdirAll(parentDir, os.ModePerm)
-			if err != nil {
-				return false, err
-			}
+		if err = os.MkdirAll(parentDir, os.ModePerm); err != nil {
+			return false, err
 		}
 
 		if hdr.Typeflag != tar.TypeDir {
@@ -973,8 +959,7 @@ func (kf *LkkFile) UnTarGz(srcTar, dstDir string) (bool, error) {
 // ChmodBatch 批量改变路径权限模式(包括子目录和所属文件).
 // filemode为文件权限模式,dirmode为目录权限模式.
 func (kf *LkkFile) ChmodBatch(fpath string, filemode, dirmode os.FileMode) (res bool) {
-	var err error
-	err = filepath.Walk(fpath, func(fpath string, f os.FileInfo, err error) error {
+	err := filepath.Walk(fpath, func(fpath string, f os.FileInfo, err error) error {
 		if f == nil {
 			return err
 		}
@@ -1047,7 +1032,7 @@ func (kf *LkkFile) Zip(dst string, fpaths ...string) (bool, error) {
 	}()
 
 	if len(fpaths) == 0 {
-		return false, errors.New("[Zip] no input files.")
+		return false, errors.New("[Zip] no input files")
 	}
 
 	var allfiles, files []string
@@ -1064,7 +1049,7 @@ func (kf *LkkFile) Zip(dst string, fpaths ...string) (bool, error) {
 	}
 
 	if len(allfiles) == 0 {
-		return false, errors.New("[Zip] no exist files.")
+		return false, errors.New("[Zip] no exist files")
 	}
 
 	zipw := zip.NewWriter(fzip)
@@ -1147,22 +1132,24 @@ func (kf *LkkFile) UnZip(srcZip, dstDir string) (bool, error) {
 }
 
 // IsZip 是否zip文件.
-func (kf *LkkFile) IsZip(fpath string) bool {
+func (kf *LkkFile) IsZip(fpath string) (bool, error) {
+	var res bool
+	var err error
+
 	ext := kf.GetExt(fpath)
-	if ext != "zip" {
-		return false
+	if ext == "zip" {
+		var f *os.File
+		var n int
+		f, err = os.Open(fpath)
+		defer func() {
+			_ = f.Close()
+		}()
+		if err == nil {
+			buf := make([]byte, 4)
+			n, err = f.Read(buf)
+			res = err == nil && n == 4 && bytes.Equal(buf, []byte("PK\x03\x04"))
+		}
 	}
 
-	f, err := os.Open(fpath)
-	if err != nil {
-		return false
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-
-	buf := make([]byte, 4)
-	n, err := f.Read(buf)
-
-	return err == nil && n == 4 && bytes.Equal(buf, []byte("PK\x03\x04"))
+	return res, err
 }

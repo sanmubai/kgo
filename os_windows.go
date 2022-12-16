@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package kgo
@@ -7,7 +8,6 @@ import (
 	"fmt"
 	"github.com/StackExchange/wmi"
 	"golang.org/x/sys/windows"
-	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -128,33 +128,6 @@ func getProcessPathByPid(pid int) (res string) {
 	return
 }
 
-// getPidByPort 根据端口号获取监听的进程PID.
-func getPidByPort(port int) (pid int) {
-	return
-}
-
-// HomeDir 获取当前用户的主目录.
-func (ko *LkkOS) HomeDir() (string, error) {
-	// First prefer the HOME environmental variable
-	if home := os.Getenv("HOME"); home != "" {
-		return home, nil
-	}
-
-	// Prefer standard environment variable USERPROFILE
-	if home := os.Getenv("USERPROFILE"); home != "" {
-		return home, nil
-	}
-
-	drive := os.Getenv("HOMEDRIVE")
-	path := os.Getenv("HOMEPATH")
-	home := drive + path
-	if drive == "" || path == "" {
-		return "", errors.New("[HomeDir] HOMEDRIVE, HOMEPATH, or USERPROFILE are blank")
-	}
-
-	return home, nil
-}
-
 // MemoryUsage 获取内存使用率,单位字节.
 // 参数 virtual(仅支持linux),是否取虚拟内存.
 // used为已用,
@@ -164,13 +137,11 @@ func (ko *LkkOS) MemoryUsage(virtual bool) (used, free, total uint64) {
 	var memInfo memoryStatusEx
 	memInfo.cbSize = uint32(unsafe.Sizeof(memInfo))
 	mem, _, _ := procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memInfo)))
-	if mem == 0 {
-		return
+	if mem > 0 {
+		total = memInfo.ullTotalPhys
+		free = memInfo.ullAvailPhys
+		used = memInfo.ullTotalPhys - memInfo.ullAvailPhys
 	}
-
-	total = memInfo.ullTotalPhys
-	free = memInfo.ullAvailPhys
-	used = memInfo.ullTotalPhys - memInfo.ullAvailPhys
 
 	return
 }
@@ -187,20 +158,19 @@ func (ko *LkkOS) CpuUsage() (user, idle, total uint64) {
 		uintptr(unsafe.Pointer(&lpIdleTime)),
 		uintptr(unsafe.Pointer(&lpKernelTime)),
 		uintptr(unsafe.Pointer(&lpUserTime)))
-	if r == 0 {
-		return
+
+	if r > 0 {
+		LOT := float64(0.0000001)
+		HIT := (LOT * 4294967296.0)
+		tmpIdle := ((HIT * float64(lpIdleTime.DwHighDateTime)) + (LOT * float64(lpIdleTime.DwLowDateTime)))
+		tmpUser := ((HIT * float64(lpUserTime.DwHighDateTime)) + (LOT * float64(lpUserTime.DwLowDateTime)))
+		tmpKernel := ((HIT * float64(lpKernelTime.DwHighDateTime)) + (LOT * float64(lpKernelTime.DwLowDateTime)))
+		//tmpSystem := (tmpKernel - tmpIdle)
+
+		user = uint64(tmpUser)
+		idle = uint64(tmpIdle)
+		total = user + idle + uint64(tmpKernel)
 	}
-
-	LOT := float64(0.0000001)
-	HIT := (LOT * 4294967296.0)
-	tmpIdle := ((HIT * float64(lpIdleTime.DwHighDateTime)) + (LOT * float64(lpIdleTime.DwLowDateTime)))
-	tmpUser := ((HIT * float64(lpUserTime.DwHighDateTime)) + (LOT * float64(lpUserTime.DwLowDateTime)))
-	tmpKernel := ((HIT * float64(lpKernelTime.DwHighDateTime)) + (LOT * float64(lpKernelTime.DwLowDateTime)))
-	//tmpSystem := (tmpKernel - tmpIdle)
-
-	user = uint64(tmpUser)
-	idle = uint64(tmpIdle)
-	total = user + idle + uint64(tmpKernel)
 
 	return
 }
@@ -218,29 +188,36 @@ func (ko *LkkOS) DiskUsage(path string) (used, free, total uint64) {
 		uintptr(unsafe.Pointer(&lpFreeBytesAvailable)),
 		uintptr(unsafe.Pointer(&lpTotalNumberOfBytes)),
 		uintptr(unsafe.Pointer(&lpTotalNumberOfFreeBytes)))
-	if diskret == 0 {
-		return
+
+	if diskret > 0 {
+		total = uint64(lpTotalNumberOfBytes)
+		free = uint64(lpTotalNumberOfFreeBytes)
+		used = uint64(lpTotalNumberOfBytes - lpTotalNumberOfFreeBytes)
 	}
-	total = uint64(lpTotalNumberOfBytes)
-	free = uint64(lpTotalNumberOfFreeBytes)
-	used = uint64(lpTotalNumberOfBytes - lpTotalNumberOfFreeBytes)
 
 	return
 }
 
 // Uptime 获取系统运行时间,秒.
 func (ko *LkkOS) Uptime() (uint64, error) {
+	var res uint64
+	var err error
+
 	procGetTickCount := procGetTickCount64
-	err := procGetTickCount64.Find()
-	if err != nil {
+	chkErr := procGetTickCount64.Find()
+	if chkErr != nil {
 		// handle WinXP, but keep in mind that "the time will wrap around to zero if the system is run continuously for 49.7 days." from MSDN
 		procGetTickCount = procGetTickCount32
 	}
-	r1, _, lastErr := syscall.Syscall(procGetTickCount.Addr(), 0, 0, 0, 0)
-	if lastErr != 0 {
-		return 0, lastErr
+
+	ret, _, errno := syscall.Syscall(procGetTickCount.Addr(), 0, 0, 0, 0)
+	if errno == 0 {
+		res = uint64((time.Duration(ret) * time.Millisecond).Seconds())
+	} else {
+		err = errors.New(errno.Error())
 	}
-	return uint64((time.Duration(r1) * time.Millisecond).Seconds()), nil
+
+	return res, err
 }
 
 // GetBiosInfo 获取BIOS信息.
@@ -254,13 +231,12 @@ func (ko *LkkOS) GetBiosInfo() *BiosInfo {
 
 	// Getting data from WMI
 	var win32BIOSDescriptions []win32BIOS
-	if err := wmi.Query("SELECT InstallDate, Manufacturer, Version FROM CIM_BIOSElement", &win32BIOSDescriptions); err != nil {
-		return res
-	}
-	if len(win32BIOSDescriptions) > 0 {
-		res.Vendor = *win32BIOSDescriptions[0].Manufacturer
-		res.Version = *win32BIOSDescriptions[0].Version
-		res.Date = *win32BIOSDescriptions[0].InstallDate
+	if err := wmi.Query("SELECT InstallDate, Manufacturer, Version FROM CIM_BIOSElement", &win32BIOSDescriptions); err == nil {
+		if len(win32BIOSDescriptions) > 0 {
+			res.Vendor = *win32BIOSDescriptions[0].Manufacturer
+			res.Version = *win32BIOSDescriptions[0].Version
+			res.Date = *win32BIOSDescriptions[0].InstallDate
+		}
 	}
 
 	return res
@@ -278,15 +254,14 @@ func (ko *LkkOS) GetBoardInfo() *BoardInfo {
 
 	// Getting data from WMI
 	var win32BaseboardDescriptions []win32Baseboard
-	if err := wmi.Query("SELECT Manufacturer, SerialNumber, Tag, Version, Product FROM Win32_BaseBoard", &win32BaseboardDescriptions); err != nil {
-		return res
-	}
-	if len(win32BaseboardDescriptions) > 0 {
-		res.Name = *win32BaseboardDescriptions[0].Product
-		res.Vendor = *win32BaseboardDescriptions[0].Manufacturer
-		res.Version = *win32BaseboardDescriptions[0].Version
-		res.Serial = *win32BaseboardDescriptions[0].SerialNumber
-		res.AssetTag = *win32BaseboardDescriptions[0].Tag
+	if err := wmi.Query("SELECT Manufacturer, SerialNumber, Tag, Version, Product FROM Win32_BaseBoard", &win32BaseboardDescriptions); err == nil {
+		if len(win32BaseboardDescriptions) > 0 {
+			res.Name = *win32BaseboardDescriptions[0].Product
+			res.Vendor = *win32BaseboardDescriptions[0].Manufacturer
+			res.Version = *win32BaseboardDescriptions[0].Version
+			res.Serial = *win32BaseboardDescriptions[0].SerialNumber
+			res.AssetTag = *win32BaseboardDescriptions[0].Tag
+		}
 	}
 
 	return res
@@ -306,32 +281,30 @@ func (ko *LkkOS) GetCpuInfo() *CpuInfo {
 
 	// Getting info from WMI
 	var win32descriptions []win32Processor
-	if err := wmi.Query("SELECT Manufacturer, Name, NumberOfLogicalProcessors, NumberOfCores, MaxClockSpeed, L2CacheSize, L3CacheSize FROM Win32_Processor", &win32descriptions); err != nil {
-		return res
+	if err := wmi.Query("SELECT Manufacturer, Name, NumberOfLogicalProcessors, NumberOfCores, MaxClockSpeed, L2CacheSize, L3CacheSize FROM Win32_Processor", &win32descriptions); err == nil {
+		var cores, threads uint
+		for _, description := range win32descriptions {
+			if res.Vendor == "" {
+				res.Vendor = *description.Manufacturer
+			}
+			if res.Model == "" {
+				res.Model = *description.Name
+			}
+			if res.Speed == "" {
+				res.Speed = toStr(description.MaxClockSpeed)
+			}
+			if res.Cache == 0 {
+				res.Cache = uint(description.L2CacheSize + description.L3CacheSize)
+			}
+
+			cores += uint(description.NumberOfCores)
+			threads += uint(description.NumberOfLogicalProcessors)
+		}
+
+		res.Cpus = uint(len(win32descriptions))
+		res.Cores = cores
+		res.Threads = threads
 	}
-
-	var cores, threads uint
-	for _, description := range win32descriptions {
-		if res.Vendor == "" {
-			res.Vendor = *description.Manufacturer
-		}
-		if res.Model == "" {
-			res.Model = *description.Name
-		}
-		if res.Speed == "" {
-			res.Speed = toStr(description.MaxClockSpeed)
-		}
-		if res.Cache == 0 {
-			res.Cache = uint(description.L2CacheSize + description.L3CacheSize)
-		}
-
-		cores += uint(description.NumberOfCores)
-		threads += uint(description.NumberOfLogicalProcessors)
-	}
-
-	res.Cpus = uint(len(win32descriptions))
-	res.Cores = cores
-	res.Threads = threads
 
 	return res
 }
@@ -345,20 +318,16 @@ func (ko *LkkOS) IsProcessExists(pid int) (res bool) {
 		// so we list every pid just to be sure and be future-proof
 		ps := getProcessByPid(pid)
 		if len(ps) > 0 && ps[0].ProcessId > 0 {
-			res = true
-			return
+			return true
 		}
 	} else {
 		var still_active uint32 = 259 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess
 		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-		if err == windows.ERROR_ACCESS_DENIED {
-			return true
-		}
-		if err == windows.ERROR_INVALID_PARAMETER {
-			return false
-		}
 		if err != nil {
-			return false
+			if err == windows.ERROR_ACCESS_DENIED {
+				res = true
+			}
+			return
 		}
 
 		defer func() {

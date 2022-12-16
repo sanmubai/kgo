@@ -1,6 +1,7 @@
 package kgo
 
 import (
+	"bytes"
 	"github.com/stretchr/testify/assert"
 	"net/url"
 	"testing"
@@ -804,6 +805,7 @@ func TestString_IsASCII(t *testing.T) {
 		{tesStr16, false},
 		{tesStr17, false},
 		{utf8Hello, false},
+		{tesHtmlDoc, false},
 		{tesStr18, true},
 		{otcAstronomicalUnit, true},
 		{tesEmail1, true},
@@ -1676,7 +1678,7 @@ func BenchmarkString_IsCreditNo(b *testing.B) {
 	}
 }
 
-func TestString_IsHexcolor(t *testing.T) {
+func TestString_IsHexColor(t *testing.T) {
 	var tests = []struct {
 		param    string
 		expected bool
@@ -1693,19 +1695,19 @@ func TestString_IsHexcolor(t *testing.T) {
 		{tesColor08, true},
 	}
 	for _, test := range tests {
-		actual, _ := KStr.IsHexcolor(test.param)
+		actual, _ := KStr.IsHexColor(test.param)
 		assert.Equal(t, actual, test.expected)
 	}
 }
 
-func BenchmarkString_IsHexcolor(b *testing.B) {
+func BenchmarkString_IsHexColor(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = KStr.IsHexcolor(tesColor08)
+		_, _ = KStr.IsHexColor(tesColor08)
 	}
 }
 
-func TestString_IsRGBcolor(t *testing.T) {
+func TestString_IsRgbColor(t *testing.T) {
 	var tests = []struct {
 		param    string
 		expected bool
@@ -1721,15 +1723,15 @@ func TestString_IsRGBcolor(t *testing.T) {
 		{tesColor15, false},
 	}
 	for _, test := range tests {
-		actual := KStr.IsRGBcolor(test.param)
+		actual := KStr.IsRgbColor(test.param)
 		assert.Equal(t, actual, test.expected)
 	}
 }
 
-func BenchmarkString_IsRGBcolor(b *testing.B) {
+func BenchmarkString_IsRgbColor(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		KStr.IsRGBcolor(tesColor11)
+		KStr.IsRgbColor(tesColor11)
 	}
 }
 
@@ -2212,6 +2214,32 @@ func BenchmarkString_Reverse(b *testing.B) {
 	}
 }
 
+func TestString_ChunkBytes(t *testing.T) {
+	res1 := KStr.ChunkBytes(bytEmpty, 5)
+	assert.Nil(t, res1)
+
+	res2 := KStr.ChunkBytes(bytsUtf8Hello, 0)
+	assert.Nil(t, res2)
+
+	res3 := KStr.ChunkBytes(bytCryptKey, 20)
+	assert.Equal(t, 1, len(res3))
+
+	bs := []byte(strJson7)
+	res4 := KStr.ChunkBytes(bs, 5)
+	assert.Equal(t, 32, len(res4))
+
+	res5 := KStr.ChunkBytes(bs, 10)
+	assert.Equal(t, 16, len(res5))
+}
+
+func BenchmarkString_ChunkBytes(b *testing.B) {
+	b.ResetTimer()
+	bs := []byte(strJson7)
+	for i := 0; i < b.N; i++ {
+		KStr.ChunkBytes(bs, 10)
+	}
+}
+
 func TestString_ChunkSplit(t *testing.T) {
 	var res string
 
@@ -2641,6 +2669,52 @@ func BenchmarkString_UuidV4(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = KStr.UuidV4()
+	}
+}
+
+func TestString_UuidV5(t *testing.T) {
+	var res string
+	var err error
+
+	//空的namespace
+	res, err = KStr.UuidV5(nil, nil)
+	assert.NotNil(t, err)
+	assert.Empty(t, res)
+
+	//namespace长度不符
+	res, err = KStr.UuidV5(nil, bytsHello)
+	assert.NotNil(t, err)
+	assert.Empty(t, res)
+
+	var nsDns = KConv.Hexs2Byte(bytsUuidNamespaceDNS)
+	var nsUrl = KConv.Hexs2Byte(bytsUuidNamespaceUrl)
+	res, err = KStr.UuidV5(nil, nsUrl)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, res)
+
+	res, err = KStr.UuidV5([]byte("www.example.com"), nsDns)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, res)
+	assert.Equal(t, "2ed6657d-e927-568b-95e1-2665a8aea6a2", res)
+
+	res, err = KStr.UuidV5([]byte(tesUrl40), nsUrl)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, res)
+	assert.Equal(t, "c106a26a-21bb-5538-8bf2-57095d1976c1", res)
+
+	var ns2 = bytes.Replace([]byte("1b671a64-40d5-491e-99b0-da01ff1f3341"), bytMinus, bytEmpty, -1)
+	var ns3 = KConv.Hexs2Byte(ns2)
+	res, err = KStr.UuidV5([]byte("Hello, World!"), ns3)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, res)
+	assert.Equal(t, "630eb68f-e0fa-5ecc-887a-7c7a62614681", res)
+}
+
+func BenchmarkString_UuidV5(b *testing.B) {
+	b.ResetTimer()
+	var ns = KConv.Hexs2Byte(bytsUuidNamespaceDNS)
+	for i := 0; i < b.N; i++ {
+		_, _ = KStr.UuidV5(bytsHello, ns)
 	}
 }
 
@@ -3360,5 +3434,63 @@ func BenchmarkString_GetEquationValue(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		KStr.GetEquationValue(equationStr01, "utm_source")
+	}
+}
+
+func TestString_ToRunes(t *testing.T) {
+	rs := KStr.ToRunes(strHello)
+	assert.NotNil(t, rs)
+	assert.Equal(t, len(rs), KStr.MbStrlen(strHello))
+}
+
+func BenchmarkString_ToRunes(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		KStr.ToRunes(strHello)
+	}
+}
+
+func TestString_PasswordSafeLevel(t *testing.T) {
+	var tests = []struct {
+		str      string
+		expected uint8
+	}{
+		{"", 0},
+		{"12abc", 1},
+		{"1223456", 1},
+		{"abc123456", 1},
+		{"abc@123456", 2},
+		{"abc@123aPPT", 2},
+		{"tcl@123aPPT", 2},
+		{b64Hello, 3},
+		{"bom7o++iQ,B)aWxD>a?MkmXR9", 4},
+	}
+	for _, test := range tests {
+		actual := KStr.PasswordSafeLevel(test.str)
+		assert.Equal(t, actual, test.expected)
+	}
+}
+
+func BenchmarkString_PasswordSafeLevel(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = KStr.PasswordSafeLevel(b64Hello)
+	}
+}
+
+func TestString_StrOffset(t *testing.T) {
+	res0 := KStr.StrOffset("", 55)
+	res1 := KStr.StrOffset(helloOther, 2360)
+	res2 := KStr.StrOffset(res1, -2360)
+
+	assert.Empty(t, res0)
+	assert.NotEmpty(t, res1)
+	assert.Equal(t, res2, helloOther)
+}
+
+func BenchmarkString_StrOffset(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		KStr.StrOffset(strHello, 33)
 	}
 }
